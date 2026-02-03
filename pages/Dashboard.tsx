@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   LineChart, Line
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Sparkles, Waves } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Sparkles, Waves, Eye, EyeOff } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import ChartBox from '../components/ChartBox';
 
@@ -21,6 +21,14 @@ const Dashboard: React.FC = () => {
   const [viewMode, setViewMode] = useState<'both' | 'planned' | 'done'>('both');
   const [period, setPeriod] = useState<number>(6);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [showValues, setShowValues] = useState(() => {
+    const saved = localStorage.getItem('azular_show_values');
+    return saved === null ? true : saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('azular_show_values', String(showValues));
+  }, [showValues]);
 
   useEffect(() => {
     if (!user) return;
@@ -50,6 +58,7 @@ const Dashboard: React.FC = () => {
 
     const income = filtered.filter(t => t.type === 'credit').reduce((acc, t) => acc + parseNumericValue(t.amount), 0);
     const expenses = filtered.filter(t => t.type === 'debit').reduce((acc, t) => acc + parseNumericValue(t.amount), 0);
+    const totalAccountBalance = accounts.reduce((acc, curr) => acc + parseNumericValue(curr.initialBalance), 0);
     
     const months: Record<string, { month: string, income: number, expense: number, gap: number }> = {};
     transactions.forEach(t => {
@@ -75,8 +84,8 @@ const Dashboard: React.FC = () => {
       return { ...m, cumIncome, cumExpense, cumGap: cumIncome - cumExpense };
     });
 
-    return { income, expenses, gap: income - expenses, chartData: cumulative };
-  }, [transactions, viewMode, period]);
+    return { income, expenses, gap: income - expenses, chartData: cumulative, totalAccountBalance };
+  }, [transactions, accounts, viewMode, period]);
 
   useEffect(() => {
     if (!loading && transactions.length > 0 && !aiInsight && user) {
@@ -102,6 +111,8 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const maskValue = (val: string) => showValues ? val : '••••••';
+
   if (loading) return <div className="p-12 text-center font-black uppercase text-blue-600 animate-pulse">Azulando seus dados...</div>;
 
   return (
@@ -115,6 +126,12 @@ const Dashboard: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
+          <button 
+            onClick={() => setShowValues(!showValues)}
+            className="p-3 bg-white border-2 border-blue-50 rounded-2xl text-blue-600 hover:bg-blue-50 transition-all shadow-sm"
+          >
+            {showValues ? <Eye size={20} /> : <EyeOff size={20} />}
+          </button>
           <div className="bg-white border-2 border-blue-50 rounded-[1.5rem] flex p-1.5 shadow-sm">
             {(['planned', 'done', 'both'] as const).map(mode => (
               <button 
@@ -147,28 +164,28 @@ const Dashboard: React.FC = () => {
             <span className="text-[10px] font-black uppercase tracking-widest">Ganhos</span>
             <TrendingUp size={20} className="text-emerald-500" />
           </div>
-          <div className="text-2xl font-black text-gray-900 tracking-tighter">{formatCurrency(stats.income)}</div>
+          <div className="text-2xl font-black text-gray-900 tracking-tighter">{maskValue(formatCurrency(stats.income))}</div>
         </div>
         <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50">
           <div className="flex items-center justify-between text-gray-400 mb-3">
             <span className="text-[10px] font-black uppercase tracking-widest">Gastos</span>
             <TrendingDown size={20} className="text-red-500" />
           </div>
-          <div className="text-2xl font-black text-gray-900 tracking-tighter">{formatCurrency(stats.expenses)}</div>
+          <div className="text-2xl font-black text-gray-900 tracking-tighter">{maskValue(formatCurrency(stats.expenses))}</div>
         </div>
         <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50">
           <div className="flex items-center justify-between text-gray-400 mb-3">
             <span className="text-[10px] font-black uppercase tracking-widest">Saldo Livre</span>
             <ArrowRightLeft size={20} className="text-blue-600" />
           </div>
-          <div className={`text-2xl font-black tracking-tighter ${stats.gap >= 0 ? 'text-gray-900' : 'text-red-500'}`}>{formatCurrency(stats.gap)}</div>
+          <div className={`text-2xl font-black tracking-tighter ${stats.gap >= 0 ? 'text-gray-900' : 'text-red-500'}`}>{maskValue(formatCurrency(stats.gap))}</div>
         </div>
         <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50">
           <div className="flex items-center justify-between text-gray-400 mb-3">
-            <span className="text-[10px] font-black uppercase tracking-widest">Contas</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Contas ({accounts.length})</span>
             <Wallet size={20} className="text-blue-400" />
           </div>
-          <div className="text-2xl font-black text-gray-900 tracking-tighter">{accounts.length}</div>
+          <div className="text-2xl font-black text-gray-900 tracking-tighter">{maskValue(formatCurrency(stats.totalAccountBalance))}</div>
         </div>
       </div>
 

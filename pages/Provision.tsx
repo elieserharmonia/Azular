@@ -1,27 +1,48 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { getTransactions, addTransaction } from '../services/db';
-import { Transaction } from '../types';
-import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatters';
+import { getTransactions, addTransaction, getAccounts, getCategories } from '../services/db';
+import { Transaction, Account, Category } from '../types';
+import { formatCurrency, getCurrentMonth, getMonthName, getTodayDate } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ComposedChart, Line, Bar
 } from 'recharts';
 import { 
-  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle
+  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X
 } from 'lucide-react';
 import ChartShell from '../components/ChartShell';
 import SimpleBars from '../components/SimpleBars';
 
+const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
+  type: 'debit',
+  description: '',
+  plannedAmount: 0,
+  amount: 0,
+  status: 'planned',
+  competenceMonth: getCurrentMonth(),
+  dueDate: getTodayDate(),
+  isFixed: true,
+  recurrence: { 
+    enabled: true, 
+    frequency: 'monthly',
+    interval: 1,
+    endDate: null,
+    occurrences: 1,
+    parentId: null
+  }
+});
+
 const Provision: React.FC = () => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<number>(12);
   const [loading, setLoading] = useState(true);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showProvisionModal, setShowProvisionModal] = useState(false);
+  const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
 
   useEffect(() => {
     if (!user) return;
@@ -30,8 +51,14 @@ const Provision: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const txs = await getTransactions(user!.uid);
+    const [txs, accs, cats] = await Promise.all([
+      getTransactions(user!.uid),
+      getAccounts(user!.uid),
+      getCategories(user!.uid)
+    ]);
     setTransactions(txs);
+    setAccounts(accs);
+    setCategories(cats);
     setLoading(false);
   };
 
@@ -94,6 +121,29 @@ const Provision: React.FC = () => {
     return projectionData.find(m => m.key === key);
   }, [projectionData]);
 
+  const handleSaveProvision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !formData.accountId || !formData.categoryId) {
+      alert("Preencha todos os campos.");
+      return;
+    }
+
+    try {
+      await addTransaction({
+        ...formData as Transaction,
+        userId: user.uid,
+        plannedAmount: parseNumericValue(formData.plannedAmount),
+        amount: 0,
+        status: 'planned'
+      });
+      setShowProvisionModal(false);
+      setFormData(INITIAL_PROVISION_STATE());
+      loadData();
+    } catch (err) {
+      alert("Erro ao salvar provisão.");
+    }
+  };
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -123,7 +173,6 @@ const Provision: React.FC = () => {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Lado A: Resumo do Plano */}
         <div className="space-y-6">
           <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden">
              <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
@@ -144,7 +193,7 @@ const Provision: React.FC = () => {
               </h3>
               <button 
                 onClick={() => setShowProvisionModal(true)}
-                className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all"
+                className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all cursor-pointer"
               >
                 + Adicionar
               </button>
@@ -175,7 +224,6 @@ const Provision: React.FC = () => {
           </div>
         </div>
 
-        {/* Lado B: Visualização do Plano */}
         <div className="space-y-6">
           <ChartShell 
             title="Evolução do Plano (Previsto)" 
@@ -201,18 +249,66 @@ const Provision: React.FC = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </ChartShell>
-
-          <div className="bg-blue-50 p-6 rounded-[2rem] border-2 border-blue-100 flex items-start gap-4">
-            <Info className="text-blue-600 mt-1" size={20} />
-            <div>
-              <h4 className="text-blue-900 font-black uppercase text-xs">O que é a Provisão?</h4>
-              <p className="text-blue-700 text-[10px] font-medium leading-relaxed mt-1">
-                Aqui você cadastra seus **gastos e ganhos fixos** que acontecem todo mês (aluguel, salário, conta de luz média). Isto cria o seu "Esqueleto Financeiro" e te ajuda a prever o futuro antes de gastar.
-              </p>
-            </div>
-          </div>
         </div>
       </div>
+
+      {showProvisionModal && (
+        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-2xl font-black uppercase tracking-tighter">Provisão de Plano</h3>
+              <button onClick={() => setShowProvisionModal(false)}><X size={32} /></button>
+            </div>
+
+            <form onSubmit={handleSaveProvision} className="space-y-8">
+              <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
+                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada Fixa</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-red-500 shadow-md' : 'text-gray-400'}`}>Gasto Fixo</button>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Nome do Item</label>
+                <input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Ex: Aluguel, Salário..." />
+              </div>
+
+              <div className="grid grid-cols-2 gap-8">
+                <div>
+                   <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Planejado</label>
+                   <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.plannedAmount === 0 ? '' : formData.plannedAmount} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Mês de Início</label>
+                  <input required type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.competenceMonth} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta Sugerida</label>
+                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
+                    <option value="">Selecione</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Categoria</label>
+                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
+                    <option value="">Escolha</option>
+                    {categories.filter(c => c.direction === formData.type || c.direction === 'both').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-6 bg-gray-50 rounded-[2rem] border-2 border-gray-100 flex items-start gap-3">
+                <Info size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-[9px] font-black text-gray-400 uppercase leading-relaxed">Itens de provisão aparecem no seu plano futuro para ajudar você a visualizar quanto sobrará no final de cada mês.</p>
+              </div>
+
+              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all">Salvar no Plano</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

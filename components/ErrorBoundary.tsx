@@ -1,5 +1,5 @@
 
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import React, { ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Trash2 } from "lucide-react";
 
 interface Props {
@@ -11,12 +11,15 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Explicitly importing and extending Component from 'react' to ensure TypeScript recognizes 'this.props'
-class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null
-  };
+// Fixed: Explicitly extending React.Component and adding a constructor to ensure 'this.props' is recognized by the TypeScript compiler
+class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -90,7 +93,7 @@ class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    // Fix: Using this.props directly to return children, ensuring null fallback for ReactNode compliance
+    // Fixed: Safely accessing children from this.props which is now correctly recognized via React.Component extension
     return this.props.children || null;
   }
 }
