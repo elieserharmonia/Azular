@@ -6,64 +6,70 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 
 /**
- * Registro do Service Worker de forma resiliente.
- * Usamos caminhos relativos diretos ('./sw.js') que são resolvidos nativamente pelo navegador.
- * Isso evita erros de construção manual de URLs que frequentemente falham em ambientes 
- * de pré-visualização ou sandboxes de desenvolvimento.
+ * CAPTURA GLOBAL DE ERROS (Agressiva)
+ * Deve ser o primeiro código a rodar.
  */
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => {
-        console.log('Azular: Service Worker registrado. Escopo:', reg.scope);
-      })
-      .catch(err => {
-        // Erros de SecurityError acontecem se não estiver em HTTPS ou localhost.
-        // Outros erros podem ocorrer se o sw.js não for encontrado no caminho relativo.
-        if (err.name === 'SecurityError') {
-          console.warn('Azular: SW bloqueado por segurança (HTTPS/Localhost necessário).');
-        } else {
-          console.error('Azular: Falha ao registrar Service Worker:', err);
-        }
-      });
-  });
-}
+const saveBootError = (error: any, context: string) => {
+  const diag = {
+    time: new Date().toISOString(),
+    context,
+    message: error?.message || String(error),
+    stack: error?.stack,
+    online: navigator.onLine,
+    ua: navigator.userAgent,
+    href: window.location.href
+  };
+  localStorage.setItem('azular_boot_error', JSON.stringify(diag, null, 2));
+  console.error(`BOOT ERROR [${context}]:`, error);
+};
 
-/**
- * Monitoramento global de erros para telemetria local e diagnóstico do usuário.
- * Salva o último erro no localStorage para ser exibido na tela de Erro ou Diagnóstico.
- */
 window.onerror = (message, source, lineno, colno, error) => {
+  saveBootError(error || message, 'window.onerror');
+};
+
+window.onunhandledrejection = (event) => {
+  saveBootError(event.reason, 'unhandledrejection');
+};
+
+const initApp = () => {
+  const rootElement = document.getElementById('root');
+  if (!rootElement) return;
+
   try {
-    const diag = {
-      message: String(message),
-      source,
-      lineno,
-      colno,
-      stack: error?.stack,
-      time: new Date().toISOString(),
-      url: window.location.href,
-      userAgent: navigator.userAgent
-    };
-    localStorage.setItem('azular_last_error', JSON.stringify(diag));
-  } catch (e) {
-    console.error("Erro ao salvar diagnóstico local:", e);
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <HashRouter>
+            <App />
+          </HashRouter>
+        </ErrorBoundary>
+      </React.StrictMode>
+    );
+
+    // Sinaliza ao watchdog no index.html que o React iniciou
+    (window as any).__AZULAR_BOOTED__ = true;
+    
+    // Remove o loader nativo após um breve delay para suavidade
+    setTimeout(() => {
+      const loader = document.getElementById('boot-loader');
+      if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 500);
+      }
+    }, 100);
+
+  } catch (err) {
+    saveBootError(err, 'ReactDOM.render');
   }
 };
 
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error("Elemento raiz 'root' não encontrado no DOM.");
+// Inicia o app
+initApp();
+
+// Service Worker (Resiliente)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn("SW fail:", e));
+  });
 }
-
-const root = ReactDOM.createRoot(rootElement);
-
-root.render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <HashRouter>
-        <App />
-      </HashRouter>
-    </ErrorBoundary>
-  </React.StrictMode>
-);

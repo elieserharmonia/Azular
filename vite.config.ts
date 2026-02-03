@@ -4,17 +4,21 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  base: './', // Fundamental para caminhos relativos em PWA e Android
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    target: 'esnext', // WebView moderna suporta esnext, se for antiga usar 'es2015'
+    target: 'esnext',
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: false, // Mantemos consoles no mobile para depuração via logcat
+        drop_console: false, // Mantido para depuração via logcat se necessário
       }
     }
+  },
+  server: {
+    port: 3000,
+    strictPort: true
   }
 })

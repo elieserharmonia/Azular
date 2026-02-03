@@ -1,60 +1,49 @@
 
-import React, { ErrorInfo, ReactNode } from "react";
-import { AlertTriangle, RotateCcw, Copy, Terminal } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { AlertTriangle, RotateCcw, Copy, Terminal, Trash2 } from "lucide-react";
 
 interface Props {
-  // Make children optional to satisfy JSX validation when used as a wrapper component
   children?: ReactNode;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
 }
 
-/**
- * Componente de fronteira de erro para capturar exceções não tratadas na árvore de componentes.
- * Utiliza a API de componentes de classe do React para capturar erros de renderização.
- */
-// Fix: Use React.Component explicitly to ensure standard inheritance and property access (setState, props)
+// Fix: Explicitly extend React.Component to ensure the 'props' property is recognized by TypeScript
 class ErrorBoundary extends React.Component<Props, State> {
-  // Definição do estado inicial
   public state: State = {
     hasError: false,
-    error: null,
-    errorInfo: null
+    error: null
   };
 
-  constructor(props: Props) {
-    super(props);
-  }
-
-  // Método estático para atualizar o estado quando um erro é lançado
-  public static getDerivedStateFromError(error: Error): Partial<State> {
+  public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Fix: setState is now correctly recognized as inherited from React.Component
-    this.setState({ errorInfo });
-    console.error("CRITICAL APP ERROR:", error, errorInfo);
-    
-    // Salva o erro para o Diagnóstico persistir após recarregar
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
     const diag = {
       message: error.message,
       stack: error.stack,
+      info: errorInfo,
       time: new Date().toISOString(),
-      url: window.location.href,
-      ua: navigator.userAgent
+      url: window.location.href
     };
     localStorage.setItem('azular_last_error', JSON.stringify(diag));
   }
 
-  private copyToClipboard = () => {
-    const errorData = localStorage.getItem('azular_last_error');
-    if (errorData) {
-      navigator.clipboard.writeText(errorData);
+  private resetApp = () => {
+    localStorage.clear();
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+    window.location.reload();
+  };
+
+  private copyDiag = () => {
+    const diag = localStorage.getItem('azular_last_error');
+    if (diag) {
+      navigator.clipboard.writeText(diag);
       alert("Diagnóstico copiado!");
     }
   };
@@ -63,55 +52,44 @@ class ErrorBoundary extends React.Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFF] p-8 text-center">
-          <div className="w-24 h-24 bg-red-100 text-red-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-xl animate-bounce">
-            <AlertTriangle size={48} />
+          <div className="w-20 h-20 bg-red-100 text-red-600 rounded-[2rem] flex items-center justify-center mb-8 animate-pulse">
+            <AlertTriangle size={40} />
           </div>
           
-          <h1 className="text-3xl font-black uppercase text-gray-900 tracking-tighter leading-none mb-4">
-            Azular falhou ao iniciar
+          <h1 className="text-2xl font-black uppercase text-gray-900 tracking-tighter mb-4">
+            Ops, o Azular parou
           </h1>
           
           <p className="text-gray-500 text-sm font-medium max-w-xs mx-auto mb-8">
-            Isso geralmente acontece devido a um erro de carregamento no Android ou falta de permissão.
+            Houve um erro inesperado. Tente recarregar ou limpar o cache se o problema persistir.
           </p>
           
-          <div className="w-full max-w-md bg-gray-900 rounded-[2rem] p-6 text-left mb-8 shadow-2xl overflow-hidden border-4 border-gray-800">
-            <div className="flex items-center gap-2 mb-4 text-gray-500 border-b border-gray-800 pb-3">
-              <Terminal size={14} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Stack Trace</span>
-            </div>
-            <pre className="text-red-400 text-[10px] font-mono overflow-auto max-h-40 custom-scrollbar">
-              {this.state.error?.stack || this.state.error?.message}
-            </pre>
-          </div>
-
           <div className="flex flex-col w-full max-w-xs gap-3">
             <button 
               onClick={() => window.location.reload()}
-              className="bg-blue-600 text-white w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
+              className="bg-blue-600 text-white w-full py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
             >
               <RotateCcw size={18} /> Tentar Recarregar
             </button>
             
             <button 
-              onClick={this.copyToClipboard}
-              className="bg-white border-2 border-gray-200 text-gray-600 w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all"
+              onClick={this.copyDiag}
+              className="bg-white border-2 border-gray-100 text-gray-600 w-full py-5 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 active:scale-95 transition-all"
             >
               <Copy size={18} /> Copiar Diagnóstico
             </button>
             
             <button 
-              onClick={() => { localStorage.clear(); window.location.href = '/'; }}
-              className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-4 hover:text-red-500"
+              onClick={this.resetApp}
+              className="mt-4 text-[10px] font-black text-red-400 uppercase tracking-widest flex items-center justify-center gap-2"
             >
-              Limpar Cache e Resetar
+              <Trash2 size={12} /> Limpar Cache e Sair
             </button>
           </div>
         </div>
       );
     }
 
-    // Fix: props.children is now accessible through correctly inherited props property
     return this.props.children;
   }
 }

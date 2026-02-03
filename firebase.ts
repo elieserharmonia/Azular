@@ -13,8 +13,8 @@ const firebaseConfig = {
   appId: "1:903140061132:web:20611e8ba37400fce0f769",
 };
 
+// Inicialização segura
 const app = initializeApp(firebaseConfig);
-
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
@@ -22,24 +22,25 @@ export const db = getFirestore(app);
 if (typeof window !== 'undefined') {
   enableMultiTabIndexedDbPersistence(db).catch((err) => {
     if (err.code === 'failed-precondition') {
-      console.warn("Azular: Persistência falhou (múltiplas abas abertas)");
+      console.warn("Azular: Persistência falhou (múltiplas abas)");
     } else if (err.code === 'unimplemented') {
-      console.warn("Azular: O navegador não suporta persistência offline");
+      console.warn("Azular: Navegador não suporta offline");
     }
   });
 }
 
-// Proteção Crítica para Analytics no Android
+// Analytics Blindado contra erros e bloqueadores
 export let analytics = null;
-isSupported().then(supported => {
-  if (supported && typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-    try {
-      analytics = getAnalytics(app);
-      console.log("Azular: Analytics carregado.");
-    } catch (e) {
-      console.warn("Azular: Analytics bloqueado.", e);
-    }
-  }
-}).catch(err => {
-  console.error("Azular: Erro Analytics", err);
-});
+if (typeof window !== 'undefined') {
+    isSupported().then(supported => {
+      if (supported) {
+        try {
+          analytics = getAnalytics(app);
+        } catch (e) {
+          console.warn("Azular: Analytics bloqueado ou falhou.");
+        }
+      }
+    }).catch(err => {
+      console.warn("Azular: Erro ao checar isSupported() para Analytics");
+    });
+}
