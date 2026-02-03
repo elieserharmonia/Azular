@@ -66,15 +66,15 @@ export interface Transaction {
   dueDate?: string; 
   receiveDate?: string; 
   status: TransactionStatus;
-  isFixed: boolean; // Usado como flag de "Recorrente"
+  isFixed: boolean; // Flag de Recorrência
   linkedProvisionId?: string | null;
   recurrence: {
     enabled: boolean;
     frequency: RecurrenceFrequency;
     interval: number | null;
-    endDate: string | null;
-    occurrences: number | null;
-    parentId: string | null; // ID que agrupa a série recorrente
+    startMonth: string;
+    endMonth: string | null; // NULL = Sem fim
+    parentId: string | null; // ID da série
   };
   notes?: string;
   createdAt: any;

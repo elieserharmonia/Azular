@@ -30,3 +30,9 @@ export const getMonthName = (competence: string) => {
   const date = new Date(parseInt(year), parseInt(month) - 1, 1);
   return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 };
+
+export const addMonthsToMonthKey = (monthKey: string, months: number): string => {
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(year, (month - 1) + months, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};

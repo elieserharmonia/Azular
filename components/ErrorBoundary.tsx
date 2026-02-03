@@ -1,5 +1,4 @@
-
-import React, { ErrorInfo, ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Trash2 } from "lucide-react";
 
 interface Props {
@@ -11,8 +10,8 @@ interface State {
   error: Error | null;
 }
 
-// Fixed: Explicitly extend React.Component with Props and State generics to ensure the compiler recognizes inherited properties like 'props'.
-class ErrorBoundary extends React.Component<Props, State> {
+// Fixed: Explicitly import Component and use it for inheritance to ensure the compiler recognizes inherited properties like 'props' and 'state'.
+class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null
@@ -92,7 +91,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fixed: Correctly accessing children via this.props now that inheritance is properly typed.
+    // Fixed: Correctly accessing children via this.props now that inheritance is correctly resolved.
     return this.props.children || null;
   }
 }

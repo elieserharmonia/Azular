@@ -3,14 +3,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { getTransactions, addTransaction, updateTransaction, getAccounts, getCategories, deleteTransaction } from '../services/db';
 import { Transaction, Account, Category } from '../types';
-import { formatCurrency, getCurrentMonth, getMonthName, getTodayDate } from '../utils/formatters';
+import { formatCurrency, getCurrentMonth, getMonthName, getTodayDate, addMonthsToMonthKey } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ComposedChart, Line, Bar
 } from 'recharts';
 import { 
-  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers
+  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers, Clock
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -26,13 +26,13 @@ const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
   status: 'planned',
   competenceMonth: getCurrentMonth(),
   dueDate: getTodayDate(),
-  isFixed: true, // Recorrência ativa por padrão em provisões
+  isFixed: true,
   recurrence: { 
     enabled: true, 
     frequency: 'monthly',
     interval: 1,
-    endDate: null,
-    occurrences: 1,
+    startMonth: getCurrentMonth(),
+    endMonth: null,
     parentId: null
   }
 });
@@ -49,14 +49,13 @@ const Provision: React.FC = () => {
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
 
-  // Estado para alcance da alteração
+  // Estado para controle de duração no formulário
+  const [durationMode, setDurationMode] = useState<'infinite' | 'fixed_months' | 'until_date'>('infinite');
+  const [durationMonths, setDurationMonths] = useState(12);
+
+  // Alcance da alteração
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
-
-  // Estado para criação rápida de categoria
-  const [showQuickCategoryModal, setShowQuickCategoryModal] = useState(false);
-  const [quickCategoryName, setQuickCategoryName] = useState('');
-  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -76,70 +75,40 @@ const Provision: React.FC = () => {
     setLoading(false);
   };
 
-  const hasDependencies = useMemo(() => accounts.length > 0 && categories.length > 0, [accounts, categories]);
-
   const provisionedItems = useMemo(() => {
     return transactions.filter(t => t.status === 'planned' || t.isFixed);
   }, [transactions]);
 
   const projectionData = useMemo(() => {
     if (loading) return [];
-    const months: Record<string, { name: string, plannedIncome: number, realIncome: number, plannedExpense: number, realExpense: number, key: string }> = {};
+    const months: Record<string, any> = {};
     const now = new Date();
     const currentMonthKey = getCurrentMonth();
-    const pastOffset = Math.floor(selectedPeriod / 2);
-    const futureOffset = selectedPeriod - pastOffset - 1;
-
-    for (let i = -pastOffset; i <= futureOffset; i++) {
+    
+    for (let i = -6; i <= 24; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      months[key] = { 
-        name: getMonthName(key).split(' de ')[0], 
-        plannedIncome: 0, 
-        realIncome: 0, 
-        plannedExpense: 0, 
-        realExpense: 0,
-        key
-      };
+      months[key] = { name: getMonthName(key).split(' de ')[0], plannedIncome: 0, plannedExpense: 0, key };
     }
 
     transactions.forEach(t => {
       const m = t.competenceMonth;
       if (months[m]) {
-        const plannedVal = parseNumericValue(t.plannedAmount || t.amount);
-        const realVal = parseNumericValue(t.amount);
-        if (t.type === 'credit') {
-          months[m].plannedIncome += plannedVal;
-          if (t.status === 'done') months[m].realIncome += realVal;
-        } else {
-          months[m].plannedExpense += plannedVal;
-          if (t.status === 'done') months[m].realExpense += realVal;
-        }
+        const val = parseNumericValue(t.plannedAmount || t.amount);
+        if (t.type === 'credit') months[m].plannedIncome += val;
+        else months[m].plannedExpense += val;
       }
     });
 
-    const sorted = Object.values(months).sort((a, b) => a.key.localeCompare(b.key));
-    let accPlanned = 0;
-    let accReal = 0;
-    return sorted.map(m => {
-      accPlanned += (m.plannedIncome - m.plannedExpense);
-      let currentAccReal: number | null = null;
-      if (m.key <= currentMonthKey) {
-        accReal += (m.realIncome - m.realExpense);
-        currentAccReal = accReal;
-      }
-      return { ...m, accPlanned, accReal: currentAccReal };
-    });
-  }, [transactions, selectedPeriod, loading]);
-
-  const currentMonthData = useMemo(() => {
-    const key = getCurrentMonth();
-    return projectionData.find(m => m.key === key);
-  }, [projectionData]);
+    return Object.values(months).sort((a: any, b: any) => a.key.localeCompare(b.key));
+  }, [transactions, loading]);
 
   const handleOpenEdit = (item: Transaction) => {
     setEditingItem(item);
     setFormData(item);
+    // Detectar modo de duração ao abrir
+    if (!item.recurrence.endMonth) setDurationMode('infinite');
+    else setDurationMode('until_date');
     setShowProvisionModal(true);
   };
 
@@ -150,38 +119,51 @@ const Provision: React.FC = () => {
       return;
     }
 
+    // Calcular data final com base no modo
+    let finalEndMonth: string | null = null;
+    if (durationMode === 'fixed_months') {
+      finalEndMonth = addMonthsToMonthKey(formData.competenceMonth!, durationMonths - 1);
+    } else if (durationMode === 'until_date') {
+      finalEndMonth = formData.recurrence?.endMonth || null;
+    }
+
+    const updatedFormData = {
+      ...formData,
+      plannedAmount: parseNumericValue(formData.plannedAmount),
+      recurrence: {
+        ...formData.recurrence!,
+        endMonth: finalEndMonth
+      }
+    };
+
     if (editingItem) {
       if (editingItem.isFixed) {
+        setFormData(updatedFormData);
         setShowPropagationModal(true);
       } else {
-        await updateTransaction(editingItem.id!, {
-          ...formData,
-          plannedAmount: parseNumericValue(formData.plannedAmount)
-        });
+        await updateTransaction(editingItem.id!, updatedFormData);
         closeAllModals();
         loadData();
       }
     } else {
       try {
-        // Se for recorrente e novo, geramos apenas o mestre. 
-        // Em um sistema real, poderíamos gerar N meses aqui ou projetar dinamicamente.
-        // Para o Azular, salvamos o item base.
-        const parentId = formData.isFixed ? crypto.randomUUID() : null;
+        const parentId = updatedFormData.isFixed ? crypto.randomUUID() : null;
+        // No Azular, salvamos apenas o registro base (Template de série)
+        // O sistema projetará os próximos meses no Dashboard
         await addTransaction({
-          ...formData as Transaction,
+          ...updatedFormData as Transaction,
           userId: user.uid,
-          plannedAmount: parseNumericValue(formData.plannedAmount),
           amount: 0,
           status: 'planned',
           recurrence: {
-            ...formData.recurrence!,
+            ...updatedFormData.recurrence!,
             parentId: parentId
           }
         });
         closeAllModals();
         loadData();
       } catch (err) {
-        alert("Erro ao salvar provisão.");
+        alert("Erro ao salvar.");
       }
     }
   };
@@ -191,102 +173,49 @@ const Provision: React.FC = () => {
     setShowPropagationModal(false);
     setEditingItem(null);
     setFormData(INITIAL_PROVISION_STATE());
+    setDurationMode('infinite');
   };
 
   const handlePropagationSelection = async (scope: 'single' | 'all' | 'future') => {
     if (!user || !editingItem || isProcessingPropagation) return;
-
     setIsProcessingPropagation(true);
+
     try {
-      const newVal = parseNumericValue(formData.plannedAmount);
+      const batch = writeBatch(db);
       const updates = {
-        plannedAmount: newVal,
+        plannedAmount: formData.plannedAmount,
         description: formData.description,
         accountId: formData.accountId,
         categoryId: formData.categoryId,
-        isFixed: formData.isFixed
+        'recurrence.endMonth': formData.recurrence?.endMonth,
+        updatedAt: serverTimestamp()
       };
 
       if (scope === 'single') {
-        await updateTransaction(editingItem.id!, updates);
-      } else {
-        const txRef = collection(db, 'transactions');
-        let q = query(
-          txRef, 
-          where('userId', '==', user.uid),
-          where('recurrence.parentId', '==', editingItem.recurrence.parentId)
-        );
-
+        batch.update(doc(db, 'transactions', editingItem.id!), updates);
+      } else if (scope === 'all') {
+        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingItem.recurrence.parentId));
         const snap = await getDocs(q);
-        const batch = writeBatch(db);
-        
-        snap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const shouldUpdate = 
-            scope === 'all' || 
-            (scope === 'future' && data.competenceMonth >= editingItem.competenceMonth);
-          
-          if (shouldUpdate) {
-            batch.update(docSnap.ref, {
-              ...updates,
-              updatedAt: serverTimestamp()
-            });
+        snap.docs.forEach(d => batch.update(d.ref, updates));
+      } else if (scope === 'future') {
+        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingItem.recurrence.parentId));
+        const snap = await getDocs(q);
+        snap.docs.forEach(d => {
+          if (d.data().competenceMonth >= editingItem.competenceMonth) {
+            batch.update(d.ref, updates);
           }
         });
-
-        await batch.commit();
       }
 
+      await batch.commit();
       closeAllModals();
       loadData();
     } catch (err) {
-      console.error(err);
-      alert("Erro ao propagar alterações.");
+      alert("Erro ao propagar.");
     } finally {
       setIsProcessingPropagation(false);
     }
   };
-
-  const handleDeleteItem = async (id: string) => {
-    if (window.confirm("Remover do seu plano?")) {
-      try {
-        await deleteTransaction(id);
-        loadData();
-      } catch (err) {
-        alert("Erro ao excluir.");
-      }
-    }
-  };
-
-  const handleSaveQuickCategory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !quickCategoryName || isSavingCategory) return;
-    setIsSavingCategory(true);
-    try {
-      const newCatRef = await addDoc(collection(db, 'categories'), {
-        name: quickCategoryName,
-        direction: formData.type || 'debit',
-        userId: user.uid,
-        createdAt: serverTimestamp()
-      });
-      const cats = await getCategories(user.uid);
-      setCategories(cats);
-      setFormData(prev => ({ ...prev, categoryId: newCatRef.id }));
-      setQuickCategoryName('');
-      setShowQuickCategoryModal(false);
-    } catch (err) {
-      alert("Falha ao criar categoria.");
-    } finally {
-      setIsSavingCategory(false);
-    }
-  };
-
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh]">
-      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-4 font-black uppercase text-blue-600 text-[10px] tracking-widest">Calculando seu futuro...</p>
-    </div>
-  );
 
   return (
     <div className="space-y-10 pb-24">
@@ -294,157 +223,154 @@ const Provision: React.FC = () => {
         <div>
           <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Provisão</h2>
           <p className="text-blue-500 font-bold uppercase text-[10px] tracking-widest mt-2 flex items-center gap-2">
-            <Waves size={14} /> Plano de Vida Recorrente
+            <CalendarRange size={14} /> Ciclos de Vida Financeira
           </p>
         </div>
-        
-        <div className="flex gap-4">
-          <button 
-            onClick={() => setSelectedPeriod(selectedPeriod === 6 ? 12 : 6)}
-            className="bg-white border-2 border-blue-50 px-6 py-3 rounded-[1.5rem] flex items-center gap-3 shadow-sm hover:border-blue-600 transition-all active:scale-95"
-          >
-            <Calendar size={18} className="text-blue-600" />
-            <span className="text-[10px] font-black uppercase text-gray-700">{selectedPeriod} Meses</span>
-          </button>
-        </div>
+        <button 
+          onClick={() => setShowProvisionModal(true)}
+          className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-black uppercase text-xs tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all"
+        >
+          + Novo Planejamento
+        </button>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="space-y-6">
-          <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden">
-             <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-             <div className="flex items-center gap-3 opacity-60 mb-4">
-               <Target size={20} />
-               <span className="text-[10px] font-black uppercase tracking-widest">Gap do Mês (Planejado)</span>
-             </div>
-             <div className="text-4xl font-black tracking-tighter">
-               {formatCurrency((currentMonthData?.plannedIncome || 0) - (currentMonthData?.plannedExpense || 0))}
-             </div>
-             <p className="text-[10px] font-black mt-3 opacity-60 uppercase">Baseado em custos e ganhos fixos</p>
-          </div>
-
-          <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="font-black uppercase text-xs text-gray-900 flex items-center gap-2">
-                <RefreshCw size={16} className="text-blue-600" /> Itens Provisionados
-              </h3>
-              
-              <button 
-                type="button"
-                onClick={() => setShowProvisionModal(true)}
-                className="bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-95"
-              >
-                + Planejar
-              </button>
-            </div>
-
-            <div className="space-y-4 max-h-96 overflow-y-auto pr-2 no-scrollbar">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm">
+            <h3 className="font-black uppercase text-xs text-gray-400 mb-6 flex items-center gap-2">
+              <Layers size={16} className="text-blue-600" /> Séries Ativas
+            </h3>
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
               {provisionedItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-transparent hover:border-blue-100 transition-all group">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase text-gray-800 leading-none">{item.description}</span>
-                    <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">
-                      {item.isFixed ? 'Recorrente' : 'Eventual'} • {item.competenceMonth}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="text-sm font-black text-gray-900">{formatCurrency(item.plannedAmount)}</div>
-                      <div className={`text-[8px] font-black uppercase ${item.type === 'credit' ? 'text-emerald-500' : 'text-red-400'}`}>
-                        {item.type === 'credit' ? 'Entrada' : 'Saída'}
+                <div key={item.id} className="p-5 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-blue-100 transition-all group">
+                   <div className="flex justify-between items-start mb-2">
+                      <span className="text-[10px] font-black uppercase text-gray-800">{item.description}</span>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button onClick={() => handleOpenEdit(item)} className="p-1.5 text-blue-600 hover:bg-white rounded-lg"><Edit3 size={14} /></button>
+                         <button onClick={() => deleteTransaction(item.id!).then(loadData)} className="p-1.5 text-red-400 hover:bg-white rounded-lg"><Trash2 size={14} /></button>
                       </div>
-                    </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <button onClick={() => handleOpenEdit(item)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit3 size={14} /></button>
-                       <button onClick={() => handleDeleteItem(item.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
-                    </div>
-                  </div>
+                   </div>
+                   <div className="flex justify-between items-end">
+                      <div className="text-xl font-black text-gray-900 tracking-tighter">{formatCurrency(item.plannedAmount)}</div>
+                      <div className="text-right">
+                         <span className="text-[8px] font-black uppercase text-blue-400 block">
+                           {item.recurrence.endMonth ? `Até ${item.recurrence.endMonth}` : 'Sem fim'}
+                         </span>
+                         <span className="text-[8px] font-bold text-gray-300 uppercase">{item.competenceMonth}</span>
+                      </div>
+                   </div>
                 </div>
               ))}
-              {provisionedItems.length === 0 && (
-                <div className="text-center py-10">
-                  <AlertCircle className="mx-auto text-gray-300 mb-2" size={32} />
-                  <p className="text-[10px] font-black uppercase text-gray-400">Nenhum plano traçado.</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <ChartShell 
-            title="Evolução do Plano de Vida" 
-            hasData={projectionData.length > 0} 
-            heightClass="h-[450px]"
-            fallback={<SimpleBars data={projectionData} />}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={projectionData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f7ff" />
-                <XAxis dataKey="name" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                <YAxis tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}} 
-                  formatter={(value: any) => value !== null ? formatCurrency(parseNumericValue(value)) : '---'}
-                />
-                <Legend verticalAlign="top" iconType="circle" />
-                <Bar dataKey="plannedIncome" name="Entradas Prev." fill="#bfdbfe" radius={[4, 4, 0, 0]} barSize={12} />
-                <Bar dataKey="plannedExpense" name="Saídas Prev." fill="#fecaca" radius={[4, 4, 0, 0]} barSize={12} />
-                <Line type="monotone" dataKey="accPlanned" name="Acumulado" stroke="#2563eb" strokeWidth={3} strokeDasharray="5 5" dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </ChartShell>
+        <div className="lg:col-span-2">
+           <ChartShell title="Visão de Futuro (24 Meses)" hasData={projectionData.length > 0} heightClass="h-[400px]" fallback={<SimpleBars data={projectionData} />}>
+              <ResponsiveContainer width="100%" height="100%">
+                 <ComposedChart data={projectionData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f7ff" />
+                    <XAxis dataKey="name" tick={{fontSize: 9, fontWeight: 'black'}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fontSize: 9, fontWeight: 'black'}} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} />
+                    <Bar dataKey="plannedIncome" name="Entradas" fill="#60A5FA" radius={[4, 4, 0, 0]} barSize={10} />
+                    <Bar dataKey="plannedExpense" name="Saídas" fill="#F87171" radius={[4, 4, 0, 0]} barSize={10} />
+                 </ComposedChart>
+              </ResponsiveContainer>
+           </ChartShell>
         </div>
       </div>
 
       <BannerAd />
 
-      {/* Modal de Provisão */}
+      {/* Modal de Lançamento/Edição */}
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[95vh] overflow-y-auto relative">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">
-                {editingItem ? 'Editar Planejamento' : 'Planejar Futuro'}
+                {editingItem ? 'Editar Plano' : 'Novo Planejamento'}
               </h3>
               <button onClick={closeAllModals} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
             </div>
 
             <form onSubmit={handleSaveProvision} className="space-y-6">
               <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
-                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada Fixa</button>
-                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-red-500 shadow-md' : 'text-gray-400'}`}>Gasto Fixo</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-red-500 shadow-md' : 'text-gray-400'}`}>Saída</button>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">O que é este item?</label>
+                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Descrição</label>
                 <input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Aluguel, Salário..." />
               </div>
 
               <div className="grid grid-cols-2 gap-8">
                 <div>
-                   <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Mensal</label>
-                   <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.plannedAmount === 0 ? '' : formData.plannedAmount} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" />
+                  <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Planejado</label>
+                  <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.plannedAmount === 0 ? '' : formData.plannedAmount} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Mês de Referência</label>
-                  <input required disabled={!!editingItem} type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none disabled:opacity-50" value={formData.competenceMonth} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Inicia em</label>
+                  <input required type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.competenceMonth} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
                 </div>
+              </div>
+
+              {/* Duração da Recorrência */}
+              <div className="p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <RefreshCw size={20} className="text-blue-600" />
+                    <span className="text-xs font-black uppercase text-gray-700">Repetir</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {formData.isFixed && (
+                  <div className="space-y-4 animate-in fade-in duration-300">
+                    <div className="flex flex-col gap-2">
+                       <label className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${durationMode === 'infinite' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent opacity-60'}`}>
+                          <input type="radio" className="hidden" name="dur" checked={durationMode === 'infinite'} onChange={() => setDurationMode('infinite')} />
+                          <span className="text-[10px] font-black uppercase tracking-widest flex-1">Sem fim (Infinito)</span>
+                       </label>
+                       
+                       <label className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${durationMode === 'fixed_months' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent opacity-60'}`}>
+                          <input type="radio" className="hidden" name="dur" checked={durationMode === 'fixed_months'} onChange={() => setDurationMode('fixed_months')} />
+                          <div className="flex-1 flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-widest">Por X Meses</span>
+                            {durationMode === 'fixed_months' && (
+                              <input type="number" min="1" max="240" className="w-16 bg-blue-50 text-center font-black rounded-lg py-1" value={durationMonths} onChange={e => setDurationMonths(parseInt(e.target.value))} />
+                            )}
+                          </div>
+                       </label>
+
+                       <label className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${durationMode === 'until_date' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent opacity-60'}`}>
+                          <input type="radio" className="hidden" name="dur" checked={durationMode === 'until_date'} onChange={() => setDurationMode('until_date')} />
+                          <div className="flex-1 flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-widest">Até o Mês</span>
+                            {durationMode === 'until_date' && (
+                              <input type="month" className="bg-blue-50 text-center font-black rounded-lg px-2 py-1 text-[10px]" value={formData.recurrence?.endMonth || ''} onChange={e => setFormData({...formData, recurrence: {...formData.recurrence!, endMonth: e.target.value}})} />
+                            )}
+                          </div>
+                       </label>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-8">
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta</label>
                   <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-                    <option value="">Selecione</option>
+                    <option value="">Escolha</option>
                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Categoria</label>
-                    <button type="button" onClick={() => setShowQuickCategoryModal(true)} className="text-blue-600 text-[9px] font-black uppercase flex items-center gap-1"><Plus size={10} /> Nova</button>
-                  </div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Categoria</label>
                   <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
                     <option value="">Escolha</option>
                     {categories.filter(c => c.direction === formData.type || c.direction === 'both').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -452,57 +378,30 @@ const Provision: React.FC = () => {
                 </div>
               </div>
 
-              {/* Toggle de Recorrência Restaurado */}
-              <div className="p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <RefreshCw size={20} className="text-blue-600" />
-                    <div>
-                      <span className="text-xs font-black uppercase text-gray-700 block">Recorrente?</span>
-                      <span className="text-[8px] font-bold text-gray-400 uppercase">Repetir todo mês automaticamente</span>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-              </div>
-
-              {!hasDependencies && (
-                <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-center gap-3">
-                  <AlertCircle size={20} className="text-amber-500 shrink-0" />
-                  <p className="text-[9px] font-black text-amber-700 uppercase leading-tight">Cadastre uma conta e uma categoria antes de salvar seu plano.</p>
-                </div>
-              )}
-
-              <button 
-                type="submit" 
-                disabled={!hasDependencies}
-                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"
-              >
-                {editingItem ? 'Confirmar Alteração' : 'Fixar no Plano'}
+              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">
+                {editingItem ? 'Confirmar Edição' : 'Salvar no Plano'}
               </button>
             </form>
 
-            {/* Modal de Propagação (Overlay Interno) */}
+            {/* Modal de Propagação */}
             {showPropagationModal && (
-              <div className="absolute inset-0 bg-blue-900/95 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
+              <div className="absolute inset-0 bg-blue-900/95 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[3rem] animate-in fade-in duration-300">
                 <div className="w-full max-w-sm space-y-8 text-white text-center">
                   <div className="w-20 h-20 bg-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
-                    <RefreshCw size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
+                    <History size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
                   </div>
-                  <h4 className="text-2xl font-black uppercase tracking-tighter">Alcance da Alteração</h4>
+                  <h4 className="text-2xl font-black uppercase tracking-tighter">Alcance da Mudança</h4>
                   <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest leading-relaxed">
-                    Esta é uma conta recorrente. Como quer aplicar a mudança?
+                    Você está editando: {getMonthName(editingItem!.competenceMonth)}<br/>
+                    Como quer aplicar esta alteração?
                   </p>
 
                   <div className="space-y-3">
                     <button onClick={() => handlePropagationSelection('single')} className="w-full bg-white text-blue-900 p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Calendar size={20} /></div>
+                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Clock size={20} /></div>
                       <div>
                         <span className="font-black uppercase text-[10px] block leading-none">Somente este mês</span>
-                        <span className="text-[8px] font-bold text-gray-400 uppercase">Ajuste pontual (ex: luz mais alta)</span>
+                        <span className="text-[8px] font-bold text-gray-400 uppercase">Luz veio diferente só este mês</span>
                       </div>
                     </button>
 
@@ -510,7 +409,7 @@ const Provision: React.FC = () => {
                       <div className="p-3 bg-white/10 text-white rounded-xl"><ArrowRight size={20} /></div>
                       <div>
                         <span className="font-black uppercase text-[10px] block leading-none">Deste mês em diante</span>
-                        <span className="text-[8px] font-bold text-blue-200 uppercase">Mudança definitiva (ex: aumento salário)</span>
+                        <span className="text-[8px] font-bold text-blue-200 uppercase">Salário aumentou em Junho</span>
                       </div>
                     </button>
 
@@ -518,7 +417,7 @@ const Provision: React.FC = () => {
                       <div className="p-3 bg-white/5 text-white rounded-xl"><History size={20} /></div>
                       <div>
                         <span className="font-black uppercase text-[10px] block leading-none">Todos os meses</span>
-                        <span className="text-[8px] font-bold text-blue-200 uppercase">Corrigir erro em toda a série</span>
+                        <span className="text-[8px] font-bold text-blue-200 uppercase">Corrigir regra em toda a série</span>
                       </div>
                     </button>
                   </div>
