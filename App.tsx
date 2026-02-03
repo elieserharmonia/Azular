@@ -19,7 +19,6 @@ import Profile from './pages/Profile';
 import PrintReport from './pages/PrintReport';
 import RestartPlan from './pages/RestartPlan';
 import Diagnostics from './pages/Diagnostics';
-import BrandingLab from './pages/BrandingLab';
 
 // Components
 import Layout from './components/Layout';
@@ -99,7 +98,6 @@ const App: React.FC = () => {
             <Route path="goals" element={<Goals />} />
             <Route path="reports" element={<Reports />} />
             <Route path="profile" element={<Profile />} />
-            <Route path="branding" element={<BrandingLab />} />
             <Route index element={<Navigate to="/app/dashboard" />} />
           </Route>
 

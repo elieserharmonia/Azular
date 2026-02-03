@@ -17,8 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Download,
-  Palette
+  Download
 } from 'lucide-react';
 import { useAuth } from '../App';
 import PWAStatus from './PWAStatus';
@@ -68,7 +67,6 @@ const Layout: React.FC = () => {
     { to: '/app/restart-plan', icon: <HeartPulse size={22} />, label: 'Recomeço' },
     { to: '/app/accounts', icon: <Wallet size={22} />, label: 'Minhas Contas' },
     { to: '/app/analysis', icon: <TrendingUp size={22} />, label: 'Análise' },
-    { to: '/app/branding', icon: <Palette size={22} />, label: 'Lab Criativo' },
     { to: '/app/profile', icon: <UserCircle size={22} />, label: 'Meu Perfil' },
   ];
 
