@@ -17,10 +17,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          # Removido cache npm porque não existe lock file
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install
 
       - name: Build web (Vite)
         run: npm run build
@@ -41,6 +41,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
 
       - name: Build Debug APK
         working-directory: android
