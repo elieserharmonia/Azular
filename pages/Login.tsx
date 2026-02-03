@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { auth } from '../firebase';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Fingerprint, Waves, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Fingerprint, Sparkles } from 'lucide-react';
+import BrandLogo from '../components/BrandLogo';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -63,29 +64,22 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F8FAFF] flex flex-col md:flex-row">
-      {/* Lado Esquerdo - Branding / Onboarding */}
       <div className="md:w-1/2 bg-blue-600 p-12 flex flex-col justify-center text-white relative overflow-hidden">
         <div className="absolute top-[-100px] right-[-100px] w-64 h-64 bg-blue-400/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-[-100px] left-[-50px] w-80 h-80 bg-blue-700/40 rounded-full blur-3xl"></div>
         
         <div className="relative z-10 max-w-sm mx-auto md:mx-0">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="bg-white p-3 rounded-2xl shadow-xl">
-              <Waves size={32} className="text-blue-600" />
-            </div>
-            <h1 className="text-4xl font-black uppercase tracking-tighter">Azular</h1>
-          </div>
-          <p className="text-xl font-bold mb-4 opacity-90 leading-tight">Cuidar do dinheiro começa em casa.</p>
+          <BrandLogo size={64} light variant="full" className="mb-10" />
+          <p className="text-2xl font-bold mb-4 opacity-90 leading-tight">Cuidar do dinheiro começa em casa.</p>
           <p className="text-blue-100 font-medium leading-relaxed mb-8">
-            O Azular foi feito para ajudar você a organizar seu dinheiro, sair das dívidas e ter mais tranquilidade em casa. Um passo de cada vez.
+            Um guia humano e calmo para organizar suas finanças, realizar seus sonhos e proteger quem você ama.
           </p>
-          <div className="flex items-center gap-2 text-blue-200 text-xs font-black uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-blue-200 text-[10px] font-black uppercase tracking-widest">
             <Sparkles size={16} /> Sem julgamentos, apenas clareza.
           </div>
         </div>
       </div>
 
-      {/* Lado Direito - Formulário */}
       <div className="md:w-1/2 flex items-center justify-center p-8 bg-white">
         <div className="max-w-md w-full">
           <h2 className="text-2xl font-black text-gray-900 mb-2 uppercase tracking-tighter">Bem-vindo(a) de volta</h2>
@@ -149,7 +143,7 @@ const Login: React.FC = () => {
                 type="submit" 
                 className="w-full bg-blue-600 text-white font-black py-6 rounded-[2.5rem] shadow-xl hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 uppercase tracking-widest text-sm"
               >
-                {loading ? 'Preparando tudo...' : 'Começar meu recomeço'}
+                {loading ? 'Acessando Lar...' : 'Entrar no Azular'}
               </button>
 
               {biometricAvailable && (
@@ -165,7 +159,7 @@ const Login: React.FC = () => {
           </form>
           
           <div className="mt-12 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">
-            Ainda não tem conta? <Link to="/signup" className="text-blue-600 hover:underline">Criar agora</Link>
+            Novo por aqui? <Link to="/signup" className="text-blue-600 hover:underline">Criar conta</Link>
           </div>
         </div>
       </div>

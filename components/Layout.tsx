@@ -17,10 +17,12 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Download
+  Download,
+  Palette
 } from 'lucide-react';
 import { useAuth } from '../App';
 import PWAStatus from './PWAStatus';
+import BrandLogo from './BrandLogo';
 
 const Layout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -61,11 +63,12 @@ const Layout: React.FC = () => {
 
   const navItems = [
     { to: '/app/dashboard', icon: <LayoutDashboard size={22} />, label: 'Início' },
-    { to: '/app/transactions', icon: <PlusCircle size={22} />, label: 'Lançamentos (Real)' },
-    { to: '/app/provision', icon: <CalendarRange size={22} />, label: 'Provisão (Plano)' },
+    { to: '/app/transactions', icon: <PlusCircle size={22} />, label: 'Lançamentos' },
+    { to: '/app/provision', icon: <CalendarRange size={22} />, label: 'Provisão' },
     { to: '/app/restart-plan', icon: <HeartPulse size={22} />, label: 'Recomeço' },
     { to: '/app/accounts', icon: <Wallet size={22} />, label: 'Minhas Contas' },
     { to: '/app/analysis', icon: <TrendingUp size={22} />, label: 'Análise' },
+    { to: '/app/branding', icon: <Palette size={22} />, label: 'Lab Criativo' },
     { to: '/app/profile', icon: <UserCircle size={22} />, label: 'Meu Perfil' },
   ];
 
@@ -127,10 +130,7 @@ const Layout: React.FC = () => {
         >
           <Menu size={28} />
         </button>
-        <div className="flex items-center gap-2">
-           <Waves size={24} className="text-blue-600" />
-           <h1 className="text-xl font-black tracking-tighter uppercase text-blue-700">Azular</h1>
-        </div>
+        <BrandLogo size={32} />
         {renderAvatar("w-10 h-10")}
       </header>
 
@@ -150,14 +150,7 @@ const Layout: React.FC = () => {
         <div className="flex flex-col h-full">
           <div className="p-8 pb-4">
             <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <div className="bg-white p-2 rounded-xl text-blue-600 shadow-lg">
-                   <Waves size={24} />
-                </div>
-                <h1 className="text-2xl font-black tracking-tighter uppercase">
-                  Azular
-                </h1>
-              </div>
+              <BrandLogo size={32} light variant="full" />
               <div className="flex items-center gap-1">
                 <button 
                   onClick={() => setIsDesktopVisible(false)}

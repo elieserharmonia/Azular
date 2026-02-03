@@ -1,5 +1,5 @@
 
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import React, { ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Terminal } from "lucide-react";
 
 interface Props {
@@ -17,8 +17,8 @@ interface State {
  * Componente de fronteira de erro para capturar exceções não tratadas na árvore de componentes.
  * Utiliza a API de componentes de classe do React para capturar erros de renderização.
  */
-// Fix: Import Component explicitly and extend it to resolve setState and props accessibility issues
-class ErrorBoundary extends Component<Props, State> {
+// Fix: Use React.Component explicitly to ensure standard inheritance and property access (setState, props)
+class ErrorBoundary extends React.Component<Props, State> {
   // Definição do estado inicial
   public state: State = {
     hasError: false,
@@ -36,7 +36,7 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Fix: setState is now correctly inherited from Component
+    // Fix: setState is now correctly recognized as inherited from React.Component
     this.setState({ errorInfo });
     console.error("CRITICAL APP ERROR:", error, errorInfo);
     
@@ -111,7 +111,7 @@ class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    // Fix: props is now correctly inherited from Component
+    // Fix: props.children is now accessible through correctly inherited props property
     return this.props.children;
   }
 }
