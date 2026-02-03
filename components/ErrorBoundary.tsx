@@ -11,8 +11,8 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Explicitly extend React.Component to ensure the 'props' property is recognized by TypeScript
-class ErrorBoundary extends React.Component<Props, State> {
+// Fix: Extending Component directly to ensure TypeScript correctly identifies inherited properties like 'props'
+class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null
@@ -90,7 +90,8 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    return this.props.children;
+    // Fix: Return null if children is undefined to satisfy ReactNode return type
+    return this.props.children || null;
   }
 }
 

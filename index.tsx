@@ -5,32 +5,6 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 
-/**
- * CAPTURA GLOBAL DE ERROS (Agressiva)
- * Deve ser o primeiro código a rodar.
- */
-const saveBootError = (error: any, context: string) => {
-  const diag = {
-    time: new Date().toISOString(),
-    context,
-    message: error?.message || String(error),
-    stack: error?.stack,
-    online: navigator.onLine,
-    ua: navigator.userAgent,
-    href: window.location.href
-  };
-  localStorage.setItem('azular_boot_error', JSON.stringify(diag, null, 2));
-  console.error(`BOOT ERROR [${context}]:`, error);
-};
-
-window.onerror = (message, source, lineno, colno, error) => {
-  saveBootError(error || message, 'window.onerror');
-};
-
-window.onunhandledrejection = (event) => {
-  saveBootError(event.reason, 'unhandledrejection');
-};
-
 const initApp = () => {
   const rootElement = document.getElementById('root');
   if (!rootElement) return;
@@ -47,29 +21,35 @@ const initApp = () => {
       </React.StrictMode>
     );
 
-    // Sinaliza ao watchdog no index.html que o React iniciou
+    // Marca como boot completo para o watchdog do index.html
     (window as any).__AZULAR_BOOTED__ = true;
     
-    // Remove o loader nativo após um breve delay para suavidade
-    setTimeout(() => {
-      const loader = document.getElementById('boot-loader');
-      if (loader) {
+    // Remove o loader nativo
+    const loader = document.getElementById('boot-loader');
+    if (loader) {
+      setTimeout(() => {
+        loader.style.transition = 'opacity 0.5s ease';
         loader.style.opacity = '0';
         setTimeout(() => loader.remove(), 500);
-      }
-    }, 100);
+      }, 200);
+    }
 
   } catch (err) {
-    saveBootError(err, 'ReactDOM.render');
+    const diag = {
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : '',
+      time: new Date().toISOString(),
+      ua: navigator.userAgent
+    };
+    localStorage.setItem('azular_boot_error', JSON.stringify(diag));
+    console.error("Critical Boot Error:", err);
   }
 };
 
-// Inicia o app
 initApp();
 
-// Service Worker (Resiliente)
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(e => console.warn("SW fail:", e));
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
 }

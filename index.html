@@ -7,7 +7,7 @@
     <title>Azular — Cuidar do dinheiro começa em casa</title>
     
     <!-- PWA Meta Tags -->
-    <link rel="manifest" href="./manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#2563EB">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -19,9 +19,9 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            overflow-x: hidden;
             background-color: #F8FAFF;
+            margin: 0;
+            padding: 0;
         }
         #boot-loader {
             display: flex;
@@ -35,7 +35,6 @@
             left: 0;
             z-index: 9999;
             background: #F8FAFF;
-            transition: opacity 0.5s ease;
         }
         .spinner {
             width: 40px;
@@ -51,7 +50,6 @@
             display: none;
             padding: 2rem;
             text-align: center;
-            max-width: 400px;
         }
         .error-card {
             background: #fff;
@@ -59,22 +57,24 @@
             border-radius: 2rem;
             box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
             border: 2px solid #FEE2E2;
+            max-width: 320px;
+            margin: auto;
         }
     </style>
-    <script type="importmap">
+<script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.2",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
     "firebase/": "https://esm.sh/firebase@^12.8.0/",
     "recharts": "https://esm.sh/recharts@^3.7.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.2"
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
   }
 }
 </script>
@@ -84,52 +84,39 @@
         <div id="boot-loader">
             <div id="loading-state">
                 <div class="spinner"></div>
-                <p style="margin-top: 1.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; color: #2563EB;">Azulando seu lar...</p>
+                <p style="margin-top: 1.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; color: #2563EB; text-align: center;">Azulando seu lar...</p>
             </div>
             
             <div id="boot-error">
                 <div class="error-card">
-                    <h1 style="font-weight: 900; font-size: 24px; text-transform: uppercase; color: #111827; margin-bottom: 1rem;">Ops! Falha no Início</h1>
-                    <p style="font-size: 14px; color: #6B7280; margin-bottom: 2rem;">O Azular não conseguiu carregar no seu dispositivo.</p>
-                    <button onclick="window.location.reload()" style="background: #2563EB; color: #fff; width: 100%; padding: 1rem; border-radius: 1rem; font-weight: 900; text-transform: uppercase; margin-bottom: 0.5rem;">Recarregar</button>
-                    <button onclick="clearAppData()" style="background: #F3F4F6; color: #4B5563; width: 100%; padding: 1rem; border-radius: 1rem; font-weight: 900; text-transform: uppercase; font-size: 10px;">Limpar Tudo e Resetar</button>
-                    
-                    <div id="diag-box" style="margin-top: 2rem; text-align: left; background: #111827; color: #F87171; padding: 1rem; border-radius: 1rem; font-family: monospace; font-size: 10px; overflow: auto; max-height: 150px; display: none;"></div>
-                    <button id="show-diag" onclick="document.getElementById('diag-box').style.display='block'; this.style.display='none'" style="margin-top: 1rem; font-size: 10px; font-weight: 900; text-transform: uppercase; color: #9CA3AF;">Ver Diagnóstico</button>
+                    <h1 style="font-weight: 900; font-size: 20px; text-transform: uppercase; color: #111827; margin-bottom: 0.5rem;">Erro de Início</h1>
+                    <p style="font-size: 13px; color: #6B7280; margin-bottom: 1.5rem;">O app não carregou corretamente no seu navegador.</p>
+                    <button onclick="window.location.reload()" style="background: #2563EB; color: #fff; width: 100%; padding: 0.8rem; border-radius: 1rem; font-weight: 900; text-transform: uppercase; margin-bottom: 0.5rem; border: none; cursor: pointer;">Recarregar</button>
+                    <button onclick="clearCacheAndReload()" style="background: #F3F4F6; color: #4B5563; width: 100%; padding: 0.8rem; border-radius: 1rem; font-weight: 900; text-transform: uppercase; font-size: 10px; border: none; cursor: pointer;">Resetar App</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Watchdog: Se após 6s o React não marcou como iniciado, mostra erro
+        // Watchdog para detectar falha no boot do React
         window.__AZULAR_BOOTED__ = false;
         setTimeout(() => {
             if (!window.__AZULAR_BOOTED__) {
                 document.getElementById('loading-state').style.display = 'none';
                 document.getElementById('boot-error').style.display = 'block';
-                const lastError = localStorage.getItem('azular_boot_error');
-                if (lastError) {
-                    document.getElementById('diag-box').innerText = lastError;
-                } else {
-                    document.getElementById('diag-box').innerText = "Tempo limite excedido. UserAgent: " + navigator.userAgent;
-                }
             }
-        }, 6000);
+        }, 6500);
 
-        function clearAppData() {
-            if(confirm("Isso irá remover o cache e desconectar sua conta. Deseja continuar?")) {
-                localStorage.clear();
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(regs => {
-                        for(let reg of regs) reg.unregister();
-                    });
-                }
-                caches.keys().then(keys => {
-                    Promise.all(keys.map(k => caches.delete(k)));
+        function clearCacheAndReload() {
+            localStorage.clear();
+            sessionStorage.clear();
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                    for(let reg of regs) reg.unregister();
                 });
-                window.location.reload();
             }
+            window.location.reload(true);
         }
     </script>
 </body>

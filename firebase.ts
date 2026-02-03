@@ -13,34 +13,25 @@ const firebaseConfig = {
   appId: "1:903140061132:web:20611e8ba37400fce0f769",
 };
 
-// Inicialização segura
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Habilitar persistência offline (IndexedDB)
+// Persistência offline segura
 if (typeof window !== 'undefined') {
   enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn("Azular: Persistência falhou (múltiplas abas)");
-    } else if (err.code === 'unimplemented') {
-      console.warn("Azular: Navegador não suporta offline");
-    }
+    console.warn("Azular DB: Persistência desativada", err.code);
   });
 }
 
-// Analytics Blindado contra erros e bloqueadores
+// Analytics com tratamento de erro silencioso
 export let analytics = null;
 if (typeof window !== 'undefined') {
     isSupported().then(supported => {
       if (supported) {
         try {
           analytics = getAnalytics(app);
-        } catch (e) {
-          console.warn("Azular: Analytics bloqueado ou falhou.");
-        }
+        } catch (e) {}
       }
-    }).catch(err => {
-      console.warn("Azular: Erro ao checar isSupported() para Analytics");
-    });
+    }).catch(() => {});
 }
