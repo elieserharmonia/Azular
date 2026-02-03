@@ -5,12 +5,14 @@ import { getTransactions, addTransaction, updateTransaction, getAccounts, getCat
 import { Transaction, Account, Category } from '../types';
 import { formatCurrency, getCurrentMonth, getMonthName, getTodayDate, addMonthsToMonthKey } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
+import { getPreviousMonth } from '../utils/date';
+import { useToast } from '../context/ToastContext';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ComposedChart, Line, Bar
 } from 'recharts';
 import { 
-  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers, Clock
+  Waves, Target, Calendar, Plus, RefreshCw, AlertCircle, X, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers, Clock, Loader2
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -39,21 +41,19 @@ const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
 
 const Provision: React.FC = () => {
   const { user } = useAuth();
+  const { notifySuccess, notifyError, notifyInfo } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<number>(12);
   const [loading, setLoading] = useState(true);
   
   const [showProvisionModal, setShowProvisionModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
 
-  // Estado para controle de duração no formulário
   const [durationMode, setDurationMode] = useState<'infinite' | 'fixed_months' | 'until_date'>('infinite');
   const [durationMonths, setDurationMonths] = useState(12);
 
-  // Alcance da alteração
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
 
@@ -64,15 +64,20 @@ const Provision: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const [txs, accs, cats] = await Promise.all([
-      getTransactions(user!.uid),
-      getAccounts(user!.uid),
-      getCategories(user!.uid)
-    ]);
-    setTransactions(txs);
-    setAccounts(accs);
-    setCategories(cats);
-    setLoading(false);
+    try {
+      const [txs, accs, cats] = await Promise.all([
+        getTransactions(user!.uid),
+        getAccounts(user!.uid),
+        getCategories(user!.uid)
+      ]);
+      setTransactions(txs);
+      setAccounts(accs);
+      setCategories(cats);
+    } catch (err) {
+      notifyError("Erro ao carregar dados.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const provisionedItems = useMemo(() => {
@@ -83,7 +88,6 @@ const Provision: React.FC = () => {
     if (loading) return [];
     const months: Record<string, any> = {};
     const now = new Date();
-    const currentMonthKey = getCurrentMonth();
     
     for (let i = -6; i <= 24; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
@@ -106,7 +110,6 @@ const Provision: React.FC = () => {
   const handleOpenEdit = (item: Transaction) => {
     setEditingItem(item);
     setFormData(item);
-    // Detectar modo de duração ao abrir
     if (!item.recurrence.endMonth) setDurationMode('infinite');
     else setDurationMode('until_date');
     setShowProvisionModal(true);
@@ -115,11 +118,10 @@ const Provision: React.FC = () => {
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !formData.accountId || !formData.categoryId) {
-      alert("Selecione Conta e Categoria.");
+      notifyInfo("Selecione Conta e Categoria.");
       return;
     }
 
-    // Calcular data final com base no modo
     let finalEndMonth: string | null = null;
     if (durationMode === 'fixed_months') {
       finalEndMonth = addMonthsToMonthKey(formData.competenceMonth!, durationMonths - 1);
@@ -142,14 +144,13 @@ const Provision: React.FC = () => {
         setShowPropagationModal(true);
       } else {
         await updateTransaction(editingItem.id!, updatedFormData);
+        notifySuccess("Alteração salva.");
         closeAllModals();
         loadData();
       }
     } else {
       try {
         const parentId = updatedFormData.isFixed ? crypto.randomUUID() : null;
-        // No Azular, salvamos apenas o registro base (Template de série)
-        // O sistema projetará os próximos meses no Dashboard
         await addTransaction({
           ...updatedFormData as Transaction,
           userId: user.uid,
@@ -160,10 +161,11 @@ const Provision: React.FC = () => {
             parentId: parentId
           }
         });
+        notifySuccess("Planejamento fixado.");
         closeAllModals();
         loadData();
       } catch (err) {
-        alert("Erro ao salvar.");
+        notifyError("Erro ao salvar provisão.");
       }
     }
   };
@@ -182,38 +184,85 @@ const Provision: React.FC = () => {
 
     try {
       const batch = writeBatch(db);
-      const updates = {
-        plannedAmount: formData.plannedAmount,
-        description: formData.description,
-        accountId: formData.accountId,
-        categoryId: formData.categoryId,
-        'recurrence.endMonth': formData.recurrence?.endMonth,
+      const cleanUpdates = {
+        plannedAmount: parseNumericValue(formData.plannedAmount),
+        description: formData.description || editingItem.description,
+        accountId: formData.accountId || editingItem.accountId,
+        categoryId: formData.categoryId || editingItem.categoryId,
         updatedAt: serverTimestamp()
       };
 
       if (scope === 'single') {
-        batch.update(doc(db, 'transactions', editingItem.id!), updates);
-      } else if (scope === 'all') {
-        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingItem.recurrence.parentId));
+        // Apenas este mês: Editamos o documento específico
+        batch.update(doc(db, 'transactions', editingItem.id!), cleanUpdates);
+      } 
+      else if (scope === 'future') {
+        // Split: Encerramos a recorrência antiga e criamos uma nova do mês atual em diante
+        const prevMonth = getPreviousMonth(editingItem.competenceMonth);
+        
+        // 1. Encerrar regra antiga no mês anterior
+        // Nota: Em Azular, se os itens futuros já existem no DB, precisamos lidar com eles.
+        // Se for um template puro, só alteramos o template. Aqui, buscamos os físicos.
+        const q = query(
+          collection(db, 'transactions'), 
+          where('recurrence.parentId', '==', editingItem.recurrence.parentId),
+          where('userId', '==', user.uid)
+        );
         const snap = await getDocs(q);
-        snap.docs.forEach(d => batch.update(d.ref, updates));
-      } else if (scope === 'future') {
-        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingItem.recurrence.parentId));
-        const snap = await getDocs(q);
+        
+        const newParentId = crypto.randomUUID();
+
         snap.docs.forEach(d => {
-          if (d.data().competenceMonth >= editingItem.competenceMonth) {
-            batch.update(d.ref, updates);
+          const data = d.data();
+          if (data.competenceMonth < editingItem.competenceMonth) {
+            // Itens passados: Encerramos a validade para não herdar nova regra
+            batch.update(d.ref, { 'recurrence.endMonth': prevMonth });
+          } else {
+            // Itens de hoje em diante: Aplicamos nova regra e novo parentId (split de série)
+            batch.update(d.ref, { 
+              ...cleanUpdates, 
+              'recurrence.parentId': newParentId,
+              'recurrence.startMonth': editingItem.competenceMonth,
+              'recurrence.endMonth': formData.recurrence?.endMonth || null
+            });
           }
         });
+      } 
+      else if (scope === 'all') {
+        // Tudo: Update geral em todos os membros do parentId
+        const q = query(
+          collection(db, 'transactions'), 
+          where('recurrence.parentId', '==', editingItem.recurrence.parentId),
+          where('userId', '==', user.uid)
+        );
+        const snap = await getDocs(q);
+        snap.docs.forEach(d => batch.update(d.ref, {
+          ...cleanUpdates,
+          'recurrence.endMonth': formData.recurrence?.endMonth || null
+        }));
       }
 
       await batch.commit();
+      notifySuccess("Série atualizada com sucesso.");
       closeAllModals();
       loadData();
     } catch (err) {
-      alert("Erro ao propagar.");
+      console.error("Propagation Error:", err);
+      notifyError("Não consegui aplicar a alteração em massa.");
     } finally {
       setIsProcessingPropagation(false);
+    }
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (window.confirm("Remover do seu plano?")) {
+      try {
+        await deleteTransaction(id);
+        notifySuccess("Item removido.");
+        loadData();
+      } catch (err) {
+        notifyError("Erro ao excluir.");
+      }
     }
   };
 
@@ -247,7 +296,7 @@ const Provision: React.FC = () => {
                       <span className="text-[10px] font-black uppercase text-gray-800">{item.description}</span>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                          <button onClick={() => handleOpenEdit(item)} className="p-1.5 text-blue-600 hover:bg-white rounded-lg"><Edit3 size={14} /></button>
-                         <button onClick={() => deleteTransaction(item.id!).then(loadData)} className="p-1.5 text-red-400 hover:bg-white rounded-lg"><Trash2 size={14} /></button>
+                         <button onClick={() => handleDeleteItem(item.id!)} className="p-1.5 text-red-400 hover:bg-white rounded-lg"><Trash2 size={14} /></button>
                       </div>
                    </div>
                    <div className="flex justify-between items-end">
@@ -283,10 +332,10 @@ const Provision: React.FC = () => {
 
       <BannerAd />
 
-      {/* Modal de Lançamento/Edição */}
+      {/* Modal Principal de Edição */}
       {showProvisionModal && (
-        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative">
+        <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative border-2 border-blue-50">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">
                 {editingItem ? 'Editar Plano' : 'Novo Planejamento'}
@@ -316,7 +365,6 @@ const Provision: React.FC = () => {
                 </div>
               </div>
 
-              {/* Duração da Recorrência */}
               <div className="p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -383,44 +431,57 @@ const Provision: React.FC = () => {
               </button>
             </form>
 
-            {/* Modal de Propagação */}
+            {/* Modal Modesto de Propagação (Balão/Overlay Leve) */}
             {showPropagationModal && (
-              <div className="absolute inset-0 bg-blue-900/95 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[3rem] animate-in fade-in duration-300">
-                <div className="w-full max-w-sm space-y-8 text-white text-center">
-                  <div className="w-20 h-20 bg-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
-                    <History size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
+                <div className="w-full max-w-sm bg-white border-2 border-blue-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                    {isProcessingPropagation ? <Loader2 className="animate-spin" size={24} /> : <History size={24} />}
                   </div>
-                  <h4 className="text-2xl font-black uppercase tracking-tighter">Alcance da Mudança</h4>
-                  <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest leading-relaxed">
-                    Você está editando: {getMonthName(editingItem!.competenceMonth)}<br/>
-                    Como quer aplicar esta alteração?
-                  </p>
+                  
+                  <div>
+                    <h4 className="text-lg font-black uppercase tracking-tight text-gray-900">Aplicar alteração</h4>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+                      Onde essa mudança deve valer?
+                    </p>
+                  </div>
 
-                  <div className="space-y-3">
-                    <button onClick={() => handlePropagationSelection('single')} className="w-full bg-white text-blue-900 p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Clock size={20} /></div>
-                      <div>
-                        <span className="font-black uppercase text-[10px] block leading-none">Somente este mês</span>
-                        <span className="text-[8px] font-bold text-gray-400 uppercase">Luz veio diferente só este mês</span>
-                      </div>
+                  <div className="w-full space-y-2">
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('single')} 
+                      className="w-full bg-gray-50 border border-gray-100 p-4 rounded-2xl flex flex-col items-start hover:border-blue-300 hover:bg-blue-50 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <span className="font-black uppercase text-[10px] text-gray-800 leading-none mb-1">Só este mês</span>
+                      <span className="text-[8px] font-bold text-gray-400 uppercase">Ex.: Luz veio diferente</span>
                     </button>
 
-                    <button onClick={() => handlePropagationSelection('future')} className="w-full bg-blue-600 text-white border border-white/20 p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                      <div className="p-3 bg-white/10 text-white rounded-xl"><ArrowRight size={20} /></div>
-                      <div>
-                        <span className="font-black uppercase text-[10px] block leading-none">Deste mês em diante</span>
-                        <span className="text-[8px] font-bold text-blue-200 uppercase">Salário aumentou em Junho</span>
-                      </div>
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('future')} 
+                      className="w-full bg-blue-600 text-white p-4 rounded-2xl flex flex-col items-start hover:bg-blue-700 shadow-lg active:scale-95 disabled:opacity-50"
+                    >
+                      <span className="font-black uppercase text-[10px] leading-none mb-1">Deste mês em diante</span>
+                      <span className="text-[8px] font-bold text-blue-100 uppercase">Ex.: Salário aumentou</span>
                     </button>
 
-                    <button onClick={() => handlePropagationSelection('all')} className="w-full bg-transparent border-2 border-white/20 text-white p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                      <div className="p-3 bg-white/5 text-white rounded-xl"><History size={20} /></div>
-                      <div>
-                        <span className="font-black uppercase text-[10px] block leading-none">Todos os meses</span>
-                        <span className="text-[8px] font-bold text-blue-200 uppercase">Corrigir regra em toda a série</span>
-                      </div>
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('all')} 
+                      className="w-full bg-white border-2 border-gray-100 p-4 rounded-2xl flex flex-col items-start hover:border-gray-300 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <span className="font-black uppercase text-[10px] text-gray-800 leading-none mb-1">Todos os meses</span>
+                      <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tight">Corrigir toda a série</span>
                     </button>
                   </div>
+
+                  <button 
+                    disabled={isProcessingPropagation}
+                    onClick={() => setShowPropagationModal(false)}
+                    className="text-[9px] font-black uppercase text-gray-300 hover:text-red-400 transition-colors"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               </div>
             )}

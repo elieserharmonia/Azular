@@ -3,11 +3,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { useLocation } from 'react-router-dom';
 import { getTransactions, getAccounts, getCategories, addTransaction, updateTransaction } from '../services/db';
-import { Transaction, Account, Category, RecurrenceFrequency } from '../types';
+import { Transaction, Account, Category } from '../types';
 import { formatCurrency, formatDate, getCurrentMonth, getTodayDate, addMonthsToMonthKey } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
-import { Plus, Search, CheckCircle, Clock, X, RefreshCw, PlusCircle, Info, Link as LinkIcon, AlertCircle, Edit3, Trash2, ArrowRight, History } from 'lucide-react';
-import { serverTimestamp, collection, addDoc, writeBatch, query, where, getDocs, doc } from 'firebase/firestore';
+import { getPreviousMonth } from '../utils/date';
+import { useToast } from '../context/ToastContext';
+import { Plus, Search, CheckCircle, Clock, X, RefreshCw, AlertCircle, Edit3, Trash2, ArrowRight, History, Loader2 } from 'lucide-react';
+import { serverTimestamp, collection, query, where, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const INITIAL_FORM_STATE = (): Partial<Transaction> => {
@@ -36,6 +38,7 @@ const INITIAL_FORM_STATE = (): Partial<Transaction> => {
 
 const Transactions: React.FC = () => {
   const { user } = useAuth();
+  const { notifySuccess, notifyError, notifyInfo } = useToast();
   const location = useLocation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -62,15 +65,18 @@ const Transactions: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const [txs, accs, cats] = await Promise.all([
-      getTransactions(user!.uid),
-      getAccounts(user!.uid),
-      getCategories(user!.uid)
-    ]);
-    setTransactions(txs);
-    setAccounts(accs);
-    setCategories(cats);
-    setLoading(false);
+    try {
+      const [txs, accs, cats] = await Promise.all([
+        getTransactions(user!.uid),
+        getAccounts(user!.uid),
+        getCategories(user!.uid)
+      ]);
+      setTransactions(txs);
+      setAccounts(accs);
+      setCategories(cats);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOpenEdit = (tx: Transaction) => {
@@ -83,7 +89,10 @@ const Transactions: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !formData.accountId || !formData.categoryId) return;
+    if (!user || !formData.accountId || !formData.categoryId) {
+      notifyInfo("Selecione conta e categoria.");
+      return;
+    }
 
     let finalEndMonth: string | null = null;
     if (durationMode === 'fixed_months') finalEndMonth = addMonthsToMonthKey(formData.competenceMonth!, durationMonths - 1);
@@ -101,6 +110,7 @@ const Transactions: React.FC = () => {
         setShowPropagationModal(true);
       } else {
         await updateTransaction(editingTx.id!, updatedData);
+        notifySuccess("Registro atualizado.");
         closeAllModals();
         loadData();
       }
@@ -112,6 +122,7 @@ const Transactions: React.FC = () => {
         status: 'done',
         recurrence: { ...updatedData.recurrence!, parentId }
       });
+      notifySuccess("Lançamento concluído.");
       closeAllModals();
       loadData();
     }
@@ -120,33 +131,57 @@ const Transactions: React.FC = () => {
   const handlePropagationSelection = async (scope: 'single' | 'all' | 'future') => {
     if (!user || !editingTx || isProcessingPropagation) return;
     setIsProcessingPropagation(true);
+
     try {
       const batch = writeBatch(db);
       const updates = {
-        amount: formData.amount,
+        amount: parseNumericValue(formData.amount),
         description: formData.description,
         accountId: formData.accountId,
         categoryId: formData.categoryId,
-        'recurrence.endMonth': formData.recurrence?.endMonth,
         updatedAt: serverTimestamp()
       };
 
       if (scope === 'single') {
         batch.update(doc(db, 'transactions', editingTx.id!), updates);
-      } else {
-        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingTx.recurrence.parentId));
+      } else if (scope === 'future') {
+        const prevMonth = getPreviousMonth(editingTx.competenceMonth);
+        const q = query(
+          collection(db, 'transactions'), 
+          where('recurrence.parentId', '==', editingTx.recurrence.parentId),
+          where('userId', '==', user.uid)
+        );
         const snap = await getDocs(q);
+        const newParentId = crypto.randomUUID();
+
         snap.docs.forEach(d => {
-          if (scope === 'all' || (scope === 'future' && d.data().competenceMonth >= editingTx.competenceMonth)) {
-            batch.update(d.ref, updates);
+          const data = d.data();
+          if (data.competenceMonth < editingTx.competenceMonth) {
+            batch.update(d.ref, { 'recurrence.endMonth': prevMonth });
+          } else {
+            batch.update(d.ref, { 
+              ...updates, 
+              'recurrence.parentId': newParentId,
+              'recurrence.endMonth': formData.recurrence?.endMonth || null 
+            });
           }
         });
+      } else if (scope === 'all') {
+        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingTx.recurrence.parentId));
+        const snap = await getDocs(q);
+        snap.docs.forEach(d => batch.update(d.ref, {
+          ...updates,
+          'recurrence.endMonth': formData.recurrence?.endMonth || null
+        }));
       }
+
       await batch.commit();
+      notifySuccess("Alteração aplicada à série.");
       closeAllModals();
       loadData();
     } catch (err) {
-      alert("Erro ao propagar.");
+      console.error(err);
+      notifyError("Erro ao propagar mudanças.");
     } finally {
       setIsProcessingPropagation(false);
     }
@@ -222,7 +257,7 @@ const Transactions: React.FC = () => {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">
@@ -290,40 +325,55 @@ const Transactions: React.FC = () => {
             </form>
 
             {showPropagationModal && (
-              <div className="absolute inset-0 bg-blue-900/95 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[3rem] animate-in fade-in duration-300">
-                <div className="w-full max-w-sm space-y-8 text-white text-center">
-                  <div className="w-20 h-20 bg-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
-                    <History size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
+                <div className="w-full max-w-sm bg-white border-2 border-emerald-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center">
+                    {isProcessingPropagation ? <Loader2 className="animate-spin" size={24} /> : <History size={24} />}
                   </div>
-                  <h4 className="text-2xl font-black uppercase tracking-tighter">Alcance da Edição</h4>
-                  <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest leading-relaxed">
-                    Este item faz parte de uma série recorrente.<br/>
-                    Como quer aplicar as mudanças?
-                  </p>
+                  
+                  <div>
+                    <h4 className="text-lg font-black uppercase tracking-tight text-gray-900">Alcance da Edição</h4>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+                      Onde essa mudança deve valer?
+                    </p>
+                  </div>
 
-                  <div className="space-y-3">
-                    <button onClick={() => handlePropagationSelection('single')} className="w-full bg-white text-blue-900 p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                       <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Clock size={20} /></div>
-                       <div>
-                          <span className="font-black uppercase text-[10px] block leading-none">Somente este mês</span>
-                          <span className="text-[8px] font-bold text-gray-400 uppercase">Mudança temporária</span>
-                       </div>
+                  <div className="w-full space-y-2 text-left">
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('single')} 
+                      className="w-full bg-gray-50 border border-gray-100 p-4 rounded-2xl flex flex-col items-start hover:border-emerald-300 hover:bg-emerald-50 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <span className="font-black uppercase text-[10px] text-gray-800 leading-none mb-1">Só este mês</span>
+                      <span className="text-[8px] font-bold text-gray-400 uppercase">Ajuste pontual</span>
                     </button>
-                    <button onClick={() => handlePropagationSelection('future')} className="w-full bg-emerald-600 text-white p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                       <div className="p-3 bg-white/20 text-white rounded-xl"><ArrowRight size={20} /></div>
-                       <div>
-                          <span className="font-black uppercase text-[10px] block leading-none">Deste mês em diante</span>
-                          <span className="text-[8px] font-bold text-emerald-100 uppercase">Alteração definitiva</span>
-                       </div>
+
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('future')} 
+                      className="w-full bg-emerald-600 text-white p-4 rounded-2xl flex flex-col items-start hover:bg-emerald-700 shadow-lg active:scale-95 disabled:opacity-50"
+                    >
+                      <span className="font-black uppercase text-[10px] leading-none mb-1">Deste mês em diante</span>
+                      <span className="text-[8px] font-bold text-emerald-100 uppercase">Alteração definitiva</span>
                     </button>
-                    <button onClick={() => handlePropagationSelection('all')} className="w-full bg-transparent border-2 border-white/20 text-white p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
-                       <div className="p-3 bg-white/5 text-white rounded-xl"><History size={20} /></div>
-                       <div>
-                          <span className="font-black uppercase text-[10px] block leading-none">Toda a série</span>
-                          <span className="text-[8px] font-bold text-blue-200 uppercase">Ajustar histórico e futuro</span>
-                       </div>
+
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('all')} 
+                      className="w-full bg-white border-2 border-gray-100 p-4 rounded-2xl flex flex-col items-start hover:border-gray-300 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <span className="font-black uppercase text-[10px] text-gray-800 leading-none mb-1">Toda a série</span>
+                      <span className="text-[8px] font-bold text-gray-400 uppercase">Histórico e futuro</span>
                     </button>
                   </div>
+
+                  <button 
+                    disabled={isProcessingPropagation}
+                    onClick={() => setShowPropagationModal(false)}
+                    className="text-[9px] font-black uppercase text-gray-300 hover:text-red-400 transition-colors"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               </div>
             )}

@@ -24,6 +24,7 @@ import BrandingLab from './pages/BrandingLab';
 // Components
 import Layout from './components/Layout';
 import LoadingScreen from './components/LoadingScreen';
+import { ToastProvider } from './context/ToastContext';
 
 interface AuthContextType {
   user: User | null;
@@ -80,30 +81,32 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, userProfile }}>
-      <Routes key={user?.uid}>
-        <Route path="/login" element={user ? <Navigate to="/app/dashboard" /> : <Login />} />
-        <Route path="/signup" element={user ? <Navigate to="/app/dashboard" /> : <Signup />} />
-        <Route path="/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
-        <Route path="/diagnostics" element={<ProtectedRoute><Diagnostics /></ProtectedRoute>} />
-        
-        <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="analysis" element={<Analysis />} />
-          <Route path="transactions" element={<Transactions />} />
-          <Route path="provision" element={<Provision />} />
-          <Route path="restart-plan" element={<RestartPlan />} />
-          <Route path="accounts" element={<Accounts />} />
-          <Route path="goals" element={<Goals />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="branding" element={<BrandingLab />} />
-          <Route index element={<Navigate to="/app/dashboard" />} />
-        </Route>
+    <ToastProvider>
+      <AuthContext.Provider value={{ user, loading, userProfile }}>
+        <Routes key={user?.uid}>
+          <Route path="/login" element={user ? <Navigate to="/app/dashboard" /> : <Login />} />
+          <Route path="/signup" element={user ? <Navigate to="/app/dashboard" /> : <Signup />} />
+          <Route path="/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
+          <Route path="/diagnostics" element={<ProtectedRoute><Diagnostics /></ProtectedRoute>} />
+          
+          <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="analysis" element={<Analysis />} />
+            <Route path="transactions" element={<Transactions />} />
+            <Route path="provision" element={<Provision />} />
+            <Route path="restart-plan" element={<RestartPlan />} />
+            <Route path="accounts" element={<Accounts />} />
+            <Route path="goals" element={<Goals />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="branding" element={<BrandingLab />} />
+            <Route index element={<Navigate to="/app/dashboard" />} />
+          </Route>
 
-        <Route path="/" element={<Navigate to="/app/dashboard" />} />
-      </Routes>
-    </AuthContext.Provider>
+          <Route path="/" element={<Navigate to="/app/dashboard" />} />
+        </Routes>
+      </AuthContext.Provider>
+    </ToastProvider>
   );
 };
 
