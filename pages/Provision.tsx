@@ -10,7 +10,7 @@ import {
   ComposedChart, Line, Bar
 } from 'recharts';
 import { 
-  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag, Edit3, Trash2, ArrowRight, History, CalendarRange
+  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -26,7 +26,7 @@ const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
   status: 'planned',
   competenceMonth: getCurrentMonth(),
   dueDate: getTodayDate(),
-  isFixed: true,
+  isFixed: true, // Recorrência ativa por padrão em provisões
   recurrence: { 
     enabled: true, 
     frequency: 'monthly',
@@ -49,7 +49,7 @@ const Provision: React.FC = () => {
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
 
-  // Estado para propagação
+  // Estado para alcance da alteração
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
 
@@ -75,6 +75,8 @@ const Provision: React.FC = () => {
     setCategories(cats);
     setLoading(false);
   };
+
+  const hasDependencies = useMemo(() => accounts.length > 0 && categories.length > 0, [accounts, categories]);
 
   const provisionedItems = useMemo(() => {
     return transactions.filter(t => t.status === 'planned' || t.isFixed);
@@ -144,22 +146,37 @@ const Provision: React.FC = () => {
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !formData.accountId || !formData.categoryId) {
-      alert("Preencha todos os campos.");
+      alert("Selecione Conta e Categoria.");
       return;
     }
 
     if (editingItem) {
-      // Se estamos editando, abrimos o seletor de propagação
-      setShowPropagationModal(true);
+      if (editingItem.isFixed) {
+        setShowPropagationModal(true);
+      } else {
+        await updateTransaction(editingItem.id!, {
+          ...formData,
+          plannedAmount: parseNumericValue(formData.plannedAmount)
+        });
+        closeAllModals();
+        loadData();
+      }
     } else {
-      // Novo item
       try {
+        // Se for recorrente e novo, geramos apenas o mestre. 
+        // Em um sistema real, poderíamos gerar N meses aqui ou projetar dinamicamente.
+        // Para o Azular, salvamos o item base.
+        const parentId = formData.isFixed ? crypto.randomUUID() : null;
         await addTransaction({
           ...formData as Transaction,
           userId: user.uid,
           plannedAmount: parseNumericValue(formData.plannedAmount),
           amount: 0,
-          status: 'planned'
+          status: 'planned',
+          recurrence: {
+            ...formData.recurrence!,
+            parentId: parentId
+          }
         });
         closeAllModals();
         loadData();
@@ -182,26 +199,22 @@ const Provision: React.FC = () => {
     setIsProcessingPropagation(true);
     try {
       const newVal = parseNumericValue(formData.plannedAmount);
-      const newDesc = formData.description;
-      const newAcc = formData.accountId;
-      const newCat = formData.categoryId;
+      const updates = {
+        plannedAmount: newVal,
+        description: formData.description,
+        accountId: formData.accountId,
+        categoryId: formData.categoryId,
+        isFixed: formData.isFixed
+      };
 
       if (scope === 'single') {
-        await updateTransaction(editingItem.id!, {
-          plannedAmount: newVal,
-          description: newDesc,
-          accountId: newAcc,
-          categoryId: newCat
-        });
+        await updateTransaction(editingItem.id!, updates);
       } else {
-        // Busca itens relacionados (mesma descrição original e categoria ou parentId)
         const txRef = collection(db, 'transactions');
         let q = query(
           txRef, 
           where('userId', '==', user.uid),
-          where('description', '==', editingItem.description),
-          where('categoryId', '==', editingItem.categoryId),
-          where('isFixed', '==', true)
+          where('recurrence.parentId', '==', editingItem.recurrence.parentId)
         );
 
         const snap = await getDocs(q);
@@ -215,10 +228,7 @@ const Provision: React.FC = () => {
           
           if (shouldUpdate) {
             batch.update(docSnap.ref, {
-              plannedAmount: newVal,
-              description: newDesc,
-              accountId: newAcc,
-              categoryId: newCat,
+              ...updates,
               updatedAt: serverTimestamp()
             });
           }
@@ -238,7 +248,7 @@ const Provision: React.FC = () => {
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (window.confirm("Deseja remover este item do seu plano?")) {
+    if (window.confirm("Remover do seu plano?")) {
       try {
         await deleteTransaction(id);
         loadData();
@@ -251,7 +261,6 @@ const Provision: React.FC = () => {
   const handleSaveQuickCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !quickCategoryName || isSavingCategory) return;
-
     setIsSavingCategory(true);
     try {
       const newCatRef = await addDoc(collection(db, 'categories'), {
@@ -260,19 +269,12 @@ const Provision: React.FC = () => {
         userId: user.uid,
         createdAt: serverTimestamp()
       });
-
-      // Recarrega categorias
       const cats = await getCategories(user.uid);
       setCategories(cats);
-
-      // Seleciona a categoria recém criada
       setFormData(prev => ({ ...prev, categoryId: newCatRef.id }));
-      
-      // Reseta e fecha sub-modal
       setQuickCategoryName('');
       setShowQuickCategoryModal(false);
     } catch (err) {
-      console.error("Erro ao criar categoria rápida:", err);
       alert("Falha ao criar categoria.");
     } finally {
       setIsSavingCategory(false);
@@ -282,7 +284,7 @@ const Provision: React.FC = () => {
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-4 font-black uppercase text-blue-600 text-[10px] tracking-widest">Azulando sua visão de futuro...</p>
+      <p className="mt-4 font-black uppercase text-blue-600 text-[10px] tracking-widest">Calculando seu futuro...</p>
     </div>
   );
 
@@ -292,7 +294,7 @@ const Provision: React.FC = () => {
         <div>
           <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Provisão</h2>
           <p className="text-blue-500 font-bold uppercase text-[10px] tracking-widest mt-2 flex items-center gap-2">
-            <Waves size={14} /> Gestão do seu Plano de Vida
+            <Waves size={14} /> Plano de Vida Recorrente
           </p>
         </div>
         
@@ -302,7 +304,7 @@ const Provision: React.FC = () => {
             className="bg-white border-2 border-blue-50 px-6 py-3 rounded-[1.5rem] flex items-center gap-3 shadow-sm hover:border-blue-600 transition-all active:scale-95"
           >
             <Calendar size={18} className="text-blue-600" />
-            <span className="text-[10px] font-black uppercase text-gray-700">Período: {selectedPeriod}M</span>
+            <span className="text-[10px] font-black uppercase text-gray-700">{selectedPeriod} Meses</span>
           </button>
         </div>
       </header>
@@ -313,12 +315,12 @@ const Provision: React.FC = () => {
              <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
              <div className="flex items-center gap-3 opacity-60 mb-4">
                <Target size={20} />
-               <span className="text-[10px] font-black uppercase tracking-widest">Gap Planejado (Mês)</span>
+               <span className="text-[10px] font-black uppercase tracking-widest">Gap do Mês (Planejado)</span>
              </div>
              <div className="text-4xl font-black tracking-tighter">
                {formatCurrency((currentMonthData?.plannedIncome || 0) - (currentMonthData?.plannedExpense || 0))}
              </div>
-             <p className="text-[10px] font-black mt-3 opacity-60 uppercase">Diferença entre ganhos e custos fixos</p>
+             <p className="text-[10px] font-black mt-3 opacity-60 uppercase">Baseado em custos e ganhos fixos</p>
           </div>
 
           <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
@@ -329,10 +331,10 @@ const Provision: React.FC = () => {
               
               <button 
                 type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowProvisionModal(true); }}
-                className="relative z-10 bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+                onClick={() => setShowProvisionModal(true)}
+                className="bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-95"
               >
-                + Adicionar
+                + Planejar
               </button>
             </div>
 
@@ -341,7 +343,9 @@ const Provision: React.FC = () => {
                 <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-transparent hover:border-blue-100 transition-all group">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase text-gray-800 leading-none">{item.description}</span>
-                    <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">Recorrente • {item.competenceMonth}</span>
+                    <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">
+                      {item.isFixed ? 'Recorrente' : 'Eventual'} • {item.competenceMonth}
+                    </span>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
@@ -360,7 +364,7 @@ const Provision: React.FC = () => {
               {provisionedItems.length === 0 && (
                 <div className="text-center py-10">
                   <AlertCircle className="mx-auto text-gray-300 mb-2" size={32} />
-                  <p className="text-[10px] font-black uppercase text-gray-400">Nenhum item fixo provisionado.</p>
+                  <p className="text-[10px] font-black uppercase text-gray-400">Nenhum plano traçado.</p>
                 </div>
               )}
             </div>
@@ -369,7 +373,7 @@ const Provision: React.FC = () => {
 
         <div className="space-y-6">
           <ChartShell 
-            title="Evolução do Plano (Previsto)" 
+            title="Evolução do Plano de Vida" 
             hasData={projectionData.length > 0} 
             heightClass="h-[450px]"
             fallback={<SimpleBars data={projectionData} />}
@@ -384,11 +388,9 @@ const Provision: React.FC = () => {
                   formatter={(value: any) => value !== null ? formatCurrency(parseNumericValue(value)) : '---'}
                 />
                 <Legend verticalAlign="top" iconType="circle" />
-                
-                <Bar dataKey="plannedIncome" name="Ganhos Previstos" fill="#bfdbfe" radius={[4, 4, 0, 0]} barSize={12} />
-                <Bar dataKey="plannedExpense" name="Gastos Previstos" fill="#fecaca" radius={[4, 4, 0, 0]} barSize={12} />
-                
-                <Line type="monotone" dataKey="accPlanned" name="Acumulado Plano" stroke="#2563eb" strokeWidth={3} strokeDasharray="5 5" dot={false} />
+                <Bar dataKey="plannedIncome" name="Entradas Prev." fill="#bfdbfe" radius={[4, 4, 0, 0]} barSize={12} />
+                <Bar dataKey="plannedExpense" name="Saídas Prev." fill="#fecaca" radius={[4, 4, 0, 0]} barSize={12} />
+                <Line type="monotone" dataKey="accPlanned" name="Acumulado" stroke="#2563eb" strokeWidth={3} strokeDasharray="5 5" dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </ChartShell>
@@ -397,31 +399,31 @@ const Provision: React.FC = () => {
 
       <BannerAd />
 
-      {/* Modal Principal de Provisão */}
+      {/* Modal de Provisão */}
       {showProvisionModal && (
-        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto animate-in zoom-in duration-300 relative">
+        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[95vh] overflow-y-auto relative">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">
-                {editingItem ? 'Editar Planejamento' : 'Provisão de Plano'}
+                {editingItem ? 'Editar Planejamento' : 'Planejar Futuro'}
               </h3>
               <button onClick={closeAllModals} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
             </div>
 
-            <form onSubmit={handleSaveProvision} className="space-y-8">
+            <form onSubmit={handleSaveProvision} className="space-y-6">
               <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
                 <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada Fixa</button>
                 <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-red-500 shadow-md' : 'text-gray-400'}`}>Gasto Fixo</button>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Nome do Item</label>
-                <input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Ex: Aluguel, Salário..." />
+                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">O que é este item?</label>
+                <input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Aluguel, Salário..." />
               </div>
 
               <div className="grid grid-cols-2 gap-8">
                 <div>
-                   <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Planejado</label>
+                   <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Mensal</label>
                    <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.plannedAmount === 0 ? '' : formData.plannedAmount} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" />
                 </div>
                 <div>
@@ -432,8 +434,8 @@ const Provision: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-8">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta Sugerida</label>
-                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta</label>
+                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
                     <option value="">Selecione</option>
                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                   </select>
@@ -441,141 +443,85 @@ const Provision: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Categoria</label>
-                    <button 
-                      type="button" 
-                      onClick={() => setShowQuickCategoryModal(true)}
-                      className="text-blue-600 text-[9px] font-black uppercase flex items-center gap-1 hover:underline"
-                    >
-                      <Plus size={10} /> Nova
-                    </button>
+                    <button type="button" onClick={() => setShowQuickCategoryModal(true)} className="text-blue-600 text-[9px] font-black uppercase flex items-center gap-1"><Plus size={10} /> Nova</button>
                   </div>
-                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
+                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
                     <option value="">Escolha</option>
                     {categories.filter(c => c.direction === formData.type || c.direction === 'both').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div className="p-6 bg-gray-50 rounded-[2rem] border-2 border-gray-100 flex items-start gap-3">
-                <Info size={18} className="text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-[9px] font-black text-gray-400 uppercase leading-relaxed">
-                  {editingItem ? 'Ao salvar, você poderá escolher como essa alteração afeta seu plano histórico.' : 'Itens de provisão aparecem no seu plano futuro para ajudar você a visualizar quanto sobrará no final de cada mês.'}
-                </p>
+              {/* Toggle de Recorrência Restaurado */}
+              <div className="p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <RefreshCw size={20} className="text-blue-600" />
+                    <div>
+                      <span className="text-xs font-black uppercase text-gray-700 block">Recorrente?</span>
+                      <span className="text-[8px] font-bold text-gray-400 uppercase">Repetir todo mês automaticamente</span>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
               </div>
 
-              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">
-                {editingItem ? 'Confirmar Edição' : 'Salvar no Plano'}
+              {!hasDependencies && (
+                <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-center gap-3">
+                  <AlertCircle size={20} className="text-amber-500 shrink-0" />
+                  <p className="text-[9px] font-black text-amber-700 uppercase leading-tight">Cadastre uma conta e uma categoria antes de salvar seu plano.</p>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={!hasDependencies}
+                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {editingItem ? 'Confirmar Alteração' : 'Fixar no Plano'}
               </button>
             </form>
 
-            {/* Sub-modal de Categoria Rápida */}
-            {showQuickCategoryModal && (
-              <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-[110] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
-                <div className="w-full max-w-sm space-y-8 animate-in zoom-in duration-300">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <Tag size={32} />
-                    </div>
-                    <h4 className="text-xl font-black uppercase tracking-tighter">Nova Categoria</h4>
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
-                      Para {formData.type === 'credit' ? 'Entradas Fixas' : 'Gastos Fixos'}
-                    </p>
-                  </div>
-
-                  <form onSubmit={handleSaveQuickCategory} className="space-y-6">
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest text-center">Nome da Categoria</label>
-                      <input 
-                        required 
-                        autoFocus
-                        type="text" 
-                        className="w-full text-center text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600"
-                        value={quickCategoryName}
-                        onChange={e => setQuickCategoryName(e.target.value)}
-                        placeholder="Ex: Saúde, Lazer..."
-                      />
-                    </div>
-
-                    <div className="flex gap-4">
-                      <button 
-                        type="button"
-                        onClick={() => setShowQuickCategoryModal(false)}
-                        className="flex-1 py-4 font-black uppercase text-[10px] text-gray-400 tracking-widest"
-                      >
-                        Cancelar
-                      </button>
-                      <button 
-                        type="submit"
-                        disabled={isSavingCategory}
-                        className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg active:scale-95 disabled:opacity-50"
-                      >
-                        {isSavingCategory ? 'Salvando...' : 'Criar Categoria'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-
-            {/* Sub-modal de Opções de Propagação */}
+            {/* Modal de Propagação (Overlay Interno) */}
             {showPropagationModal && (
-              <div className="absolute inset-0 bg-blue-900/90 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
-                <div className="w-full max-w-sm space-y-8 text-white text-center animate-in zoom-in duration-300">
-                  <div>
-                    <div className="w-20 h-20 bg-white/10 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-6">
-                      <RefreshCw size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
-                    </div>
-                    <h4 className="text-2xl font-black uppercase tracking-tighter">Propagar Alteração?</h4>
-                    <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest mt-2 leading-relaxed">
-                      Como essa mudança afeta seu plano de vida recorrente?
-                    </p>
+              <div className="absolute inset-0 bg-blue-900/95 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
+                <div className="w-full max-w-sm space-y-8 text-white text-center">
+                  <div className="w-20 h-20 bg-white/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                    <RefreshCw size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
                   </div>
+                  <h4 className="text-2xl font-black uppercase tracking-tighter">Alcance da Alteração</h4>
+                  <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest leading-relaxed">
+                    Esta é uma conta recorrente. Como quer aplicar a mudança?
+                  </p>
 
                   <div className="space-y-3">
-                    <button 
-                      disabled={isProcessingPropagation}
-                      onClick={() => handlePropagationSelection('single')}
-                      className="w-full bg-white text-blue-900 p-5 rounded-2xl flex items-center gap-4 hover:scale-[1.02] transition-all active:scale-95 text-left disabled:opacity-50"
-                    >
+                    <button onClick={() => handlePropagationSelection('single')} className="w-full bg-white text-blue-900 p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
                       <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Calendar size={20} /></div>
                       <div>
-                        <span className="font-black uppercase text-[10px] block leading-none">Apenas este mês</span>
-                        <span className="text-[8px] font-bold text-gray-400 uppercase">Altera somente o registro atual</span>
+                        <span className="font-black uppercase text-[10px] block leading-none">Somente este mês</span>
+                        <span className="text-[8px] font-bold text-gray-400 uppercase">Ajuste pontual (ex: luz mais alta)</span>
                       </div>
                     </button>
 
-                    <button 
-                      disabled={isProcessingPropagation}
-                      onClick={() => handlePropagationSelection('future')}
-                      className="w-full bg-blue-600 text-white border border-white/20 p-5 rounded-2xl flex items-center gap-4 hover:scale-[1.02] transition-all active:scale-95 text-left disabled:opacity-50"
-                    >
+                    <button onClick={() => handlePropagationSelection('future')} className="w-full bg-blue-600 text-white border border-white/20 p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
                       <div className="p-3 bg-white/10 text-white rounded-xl"><ArrowRight size={20} /></div>
                       <div>
                         <span className="font-black uppercase text-[10px] block leading-none">Deste mês em diante</span>
-                        <span className="text-[8px] font-bold text-blue-200 uppercase">Atualiza o atual e os meses futuros</span>
+                        <span className="text-[8px] font-bold text-blue-200 uppercase">Mudança definitiva (ex: aumento salário)</span>
                       </div>
                     </button>
 
-                    <button 
-                      disabled={isProcessingPropagation}
-                      onClick={() => handlePropagationSelection('all')}
-                      className="w-full bg-transparent border-2 border-white/20 text-white p-5 rounded-2xl flex items-center gap-4 hover:scale-[1.02] transition-all active:scale-95 text-left disabled:opacity-50"
-                    >
+                    <button onClick={() => handlePropagationSelection('all')} className="w-full bg-transparent border-2 border-white/20 text-white p-5 rounded-2xl flex items-center gap-4 hover:scale-102 transition-all active:scale-95 text-left">
                       <div className="p-3 bg-white/5 text-white rounded-xl"><History size={20} /></div>
                       <div>
-                        <span className="font-black uppercase text-[10px] block leading-none">Desde o início</span>
-                        <span className="text-[8px] font-bold text-blue-200 uppercase">Atualiza todo o histórico recorrente</span>
+                        <span className="font-black uppercase text-[10px] block leading-none">Todos os meses</span>
+                        <span className="text-[8px] font-bold text-blue-200 uppercase">Corrigir erro em toda a série</span>
                       </div>
                     </button>
                   </div>
-
-                  <button 
-                    disabled={isProcessingPropagation}
-                    onClick={() => setShowPropagationModal(false)}
-                    className="text-[10px] font-black uppercase text-white/40 tracking-widest"
-                  >
-                    Voltar para edição
-                  </button>
                 </div>
               </div>
             )}

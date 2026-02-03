@@ -6,7 +6,7 @@ import { getTransactions, getAccounts, getCategories, addTransaction, updateTran
 import { Transaction, Account, Category, RecurrenceFrequency } from '../types';
 import { formatCurrency, formatDate, getCurrentMonth, getTodayDate } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
-import { Plus, Search, CheckCircle, Clock, X, RefreshCw, PlusCircle, Info, Link as LinkIcon } from 'lucide-react';
+import { Plus, Search, CheckCircle, Clock, X, RefreshCw, PlusCircle, Info, Link as LinkIcon, AlertCircle } from 'lucide-react';
 import { serverTimestamp, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -68,11 +68,13 @@ const Transactions: React.FC = () => {
       setAccounts(accs);
       setCategories(cats);
     } catch (err: any) {
-      console.error("Load Data Error:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  const hasDependencies = useMemo(() => accounts.length > 0 && categories.length > 0, [accounts, categories]);
 
   const provisionedInMonth = useMemo(() => {
     return transactions.filter(t => t.status === 'planned' && t.competenceMonth === formData.competenceMonth);
@@ -131,16 +133,16 @@ const Transactions: React.FC = () => {
     <div className="space-y-6">
       <header className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-3xl font-black tracking-tighter uppercase text-gray-900 leading-none">Lançamentos Reais</h2>
+          <h2 className="text-3xl font-black tracking-tighter uppercase text-gray-900 leading-none">Lançamentos</h2>
           <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-2 flex items-center gap-2">
-            <CheckCircle size={14} className="text-emerald-500" /> O que aconteceu de fato
+            <CheckCircle size={14} className="text-emerald-500" /> Histórico Realizado
           </p>
         </div>
         <button 
           onClick={() => { setFormData(INITIAL_FORM_STATE()); setEditingTx(null); setShowModal(true); }}
           className="w-full md:w-auto bg-emerald-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 hover:scale-105 transition-all"
         >
-          <Plus size={24} /> Registrar Agora
+          <Plus size={24} /> Registrar
         </button>
       </header>
 
@@ -148,8 +150,8 @@ const Transactions: React.FC = () => {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
         <input 
           type="text" 
-          placeholder="Pesquisar nos registros reais..." 
-          className="w-full pl-12 pr-6 py-5 rounded-3xl border-2 border-blue-50 font-bold focus:border-blue-600 outline-none transition-all shadow-sm"
+          placeholder="Pesquisar nos registros..." 
+          className="w-full pl-12 pr-6 py-5 rounded-3xl border-2 border-blue-50 font-bold outline-none focus:border-blue-600 transition-all shadow-sm"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -169,7 +171,7 @@ const Transactions: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h4 className="font-black text-gray-800 text-lg uppercase leading-none">{tx.description}</h4>
-                  {tx.linkedProvisionId && <LinkIcon size={14} className="text-blue-500" />}
+                  {(tx.linkedProvisionId || tx.isFixed) && <RefreshCw size={14} className="text-blue-500" />}
                 </div>
                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1 block">
                   {accounts.find(a => a.id === tx.accountId)?.name} • {formatDate(tx.dueDate || tx.receiveDate || '')}
@@ -180,37 +182,31 @@ const Transactions: React.FC = () => {
               <div className={`text-2xl font-black ${tx.type === 'credit' ? 'text-emerald-600' : 'text-red-500'} tracking-tighter`}>
                 {tx.type === 'credit' ? '+' : '-'}{formatCurrency(tx.amount)}
               </div>
-              <span className="text-[8px] font-black text-gray-300 uppercase">Realizado</span>
+              <span className="text-[8px] font-black text-gray-300 uppercase">{tx.isFixed ? 'Recorrente' : 'Eventual'}</span>
             </div>
           </div>
         ))}
-        {filteredTransactions.length === 0 && !loading && (
-          <div className="text-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-blue-50">
-             <Clock size={48} className="mx-auto text-gray-100 mb-4" />
-             <p className="text-[10px] font-black uppercase text-gray-400">Nenhum lançamento real encontrado.</p>
-          </div>
-        )}
       </div>
 
       {showModal && (
         <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl p-10 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl p-10 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">
-                {editingTx ? 'Ajustar Lançamento' : 'Novo Lançamento Real'}
+                {editingTx ? 'Ajustar Lançamento' : 'Novo Registro'}
               </h3>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-8">
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
                 <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada</button>
                 <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-red-500 shadow-md' : 'text-gray-400'}`}>Saída</button>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">O que você pagou/recebeu?</label>
-                <input required autoFocus type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 transition-colors" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Ex: Farmácia, Mercado..." />
+                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Descrição</label>
+                <input required autoFocus type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="O que aconteceu?" />
               </div>
 
               <div className="grid grid-cols-2 gap-8">
@@ -244,35 +240,30 @@ const Transactions: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-6 rounded-[2rem] border-2 border-gray-100 space-y-4">
-                 <div className="flex items-center gap-2">
-                   <LinkIcon size={18} className="text-blue-600" />
-                   <span className="font-black uppercase text-[10px] text-gray-600 tracking-widest">Vincular a um plano previsto?</span>
-                 </div>
-                 <select 
-                   className="w-full bg-white border border-gray-200 p-3 rounded-xl font-bold text-xs"
-                   value={formData.linkedProvisionId || ''}
-                   onChange={e => {
-                     const val = e.target.value;
-                     const prov = provisionedInMonth.find(p => p.id === val);
-                     setFormData({
-                       ...formData, 
-                       linkedProvisionId: val,
-                       categoryId: prov ? prov.categoryId : formData.categoryId,
-                       plannedAmount: prov ? prov.plannedAmount : formData.plannedAmount
-                     });
-                   }}
-                 >
-                   <option value="">Não vincular (Gasto novo/extra)</option>
-                   {provisionedInMonth.map(p => (
-                     <option key={p.id} value={p.id}>{p.description} ({formatCurrency(p.plannedAmount)})</option>
-                   ))}
-                 </select>
-                 <p className="text-[8px] font-black text-gray-400 uppercase italic">Vincular ajuda a bater o previsto vs real no final do mês.</p>
+              {/* Toggle de Recorrência Restaurado no Real */}
+              <div className="p-6 bg-emerald-50 rounded-[2rem] border-2 border-emerald-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <RefreshCw size={20} className="text-emerald-600" />
+                  <div>
+                    <span className="text-xs font-black uppercase text-gray-700 block">Lançamento Recorrente?</span>
+                    <span className="text-[8px] font-bold text-gray-400 uppercase">Criar este custo/ganho todo mês</span>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
               </div>
 
-              <button type="submit" className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-emerald-700 transition-all active:scale-95">
-                {editingTx ? 'Salvar Alteração' : 'Azular Lançamento'}
+              {!hasDependencies && (
+                <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-center gap-3">
+                  <AlertCircle size={20} className="text-amber-500 shrink-0" />
+                  <p className="text-[9px] font-black text-amber-700 uppercase leading-tight">Cadastre uma conta e categoria antes de lançar.</p>
+                </div>
+              )}
+
+              <button type="submit" disabled={!hasDependencies} className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 disabled:opacity-50">
+                {editingTx ? 'Confirmar Ajuste' : 'Azular Registro'}
               </button>
             </form>
           </div>
