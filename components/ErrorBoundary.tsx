@@ -1,5 +1,5 @@
 
-import React, { ErrorInfo, ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Terminal } from "lucide-react";
 
 interface Props {
@@ -13,24 +13,30 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-// Explicitly extend React.Component to ensure this.state, this.props, and this.setState are properly inherited
-class ErrorBoundary extends React.Component<Props, State> {
+/**
+ * Componente de fronteira de erro para capturar exceções não tratadas na árvore de componentes.
+ * Utiliza a API de componentes de classe do React para capturar erros de renderização.
+ */
+// Fix: Import Component explicitly and extend it to resolve setState and props accessibility issues
+class ErrorBoundary extends Component<Props, State> {
+  // Definição do estado inicial
+  public state: State = {
+    hasError: false,
+    error: null,
+    errorInfo: null
+  };
+
   constructor(props: Props) {
     super(props);
-    // Initialize state in the constructor for better compatibility with different TypeScript versions
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null
-    };
   }
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error, errorInfo: null };
+  // Método estático para atualizar o estado quando um erro é lançado
+  public static getDerivedStateFromError(error: Error): Partial<State> {
+    return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Correctly using setState on the Component instance
+    // Fix: setState is now correctly inherited from Component
     this.setState({ errorInfo });
     console.error("CRITICAL APP ERROR:", error, errorInfo);
     
@@ -54,7 +60,6 @@ class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public render() {
-    // Accessing this.state is now valid due to proper Component inheritance
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFF] p-8 text-center">
@@ -106,7 +111,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Accessing this.props is now correctly resolved through inheritance
+    // Fix: props is now correctly inherited from Component
     return this.props.children;
   }
 }

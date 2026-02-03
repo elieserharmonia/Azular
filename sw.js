@@ -13,7 +13,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('Azular SW: Caching App Shell');
-      return cache.addAll(STATIC_ASSETS);
+      // Tentamos cachear, mas não falhamos o install se um asset falhar (resiliência em sandbox)
+      return Promise.allSettled(STATIC_ASSETS.map(asset => cache.add(asset)));
     })
   );
   self.skipWaiting();
@@ -36,19 +37,25 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Ignora requisições de API do Firebase (deixamos o SDK do Firebase cuidar do offline deles)
-  if (url.origin.includes('firestore.googleapis.com') || url.origin.includes('firebase')) {
+  // Ignora requisições de API do Firebase e domínios de terceiros sensíveis
+  if (
+    url.origin.includes('firestore.googleapis.com') || 
+    url.origin.includes('firebase') ||
+    url.origin.includes('google-analytics')
+  ) {
     return;
   }
 
-  // Para documentos HTML e Assets (Cache First)
+  // Apenas métodos GET são cacheados
+  if (request.method !== 'GET') return;
+
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
       
       return fetch(request).then((networkResponse) => {
-        // Opcional: Cachear assets descobertos dinamicamente (imagens, etc)
-        if (request.method === 'GET' && networkResponse.status === 200) {
+        // Cachear assets estáticos e documentos descobertos dinamicamente
+        if (networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, responseToCache);
@@ -56,7 +63,7 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       }).catch(() => {
-        // Fallback caso falte rede e não tenha no cache (ex: index.html)
+        // Fallback para navegação offline
         if (request.mode === 'navigate') {
           return caches.match('./') || caches.match('./index.html');
         }
