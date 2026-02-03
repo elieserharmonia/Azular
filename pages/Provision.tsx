@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import ChartShell from '../components/ChartShell';
 import SimpleBars from '../components/SimpleBars';
+import BannerAd from '../components/BannerAd';
 
 const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
   type: 'debit',
@@ -191,9 +192,11 @@ const Provision: React.FC = () => {
               <h3 className="font-black uppercase text-xs text-gray-900 flex items-center gap-2">
                 <RefreshCw size={16} className="text-blue-600" /> Itens Provisionados
               </h3>
+              
               <button 
-                onClick={() => setShowProvisionModal(true)}
-                className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all cursor-pointer"
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowProvisionModal(true); }}
+                className="relative z-10 bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
               >
                 + Adicionar
               </button>
@@ -252,12 +255,14 @@ const Provision: React.FC = () => {
         </div>
       </div>
 
+      <BannerAd />
+
       {showProvisionModal && (
-        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto animate-in zoom-in duration-300">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">Provisão de Plano</h3>
-              <button onClick={() => setShowProvisionModal(false)}><X size={32} /></button>
+              <button onClick={() => setShowProvisionModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
             </div>
 
             <form onSubmit={handleSaveProvision} className="space-y-8">
@@ -304,7 +309,7 @@ const Provision: React.FC = () => {
                 <p className="text-[9px] font-black text-gray-400 uppercase leading-relaxed">Itens de provisão aparecem no seu plano futuro para ajudar você a visualizar quanto sobrará no final de cada mês.</p>
               </div>
 
-              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all">Salvar no Plano</button>
+              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">Salvar no Plano</button>
             </form>
           </div>
         </div>

@@ -1,7 +1,7 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableMultiTabIndexedDbPersistence } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 const firebaseConfig = {
@@ -13,25 +13,27 @@ const firebaseConfig = {
   appId: "1:903140061132:web:20611e8ba37400fce0f769",
 };
 
+// Inicialização segura do App
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
-// Persistência offline segura
-if (typeof window !== 'undefined') {
-  enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    console.warn("Azular DB: Persistência desativada", err.code);
-  });
-}
+// Nova forma de configurar cache persistente (Substitui enableMultiTabIndexedDbPersistence)
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+});
 
-// Analytics com tratamento de erro silencioso
+// Analytics com tratamento de erro absoluto
 export let analytics = null;
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
     isSupported().then(supported => {
       if (supported) {
         try {
           analytics = getAnalytics(app);
-        } catch (e) {}
+        } catch (e) {
+          console.warn("Azular Analytics: falha silenciosa ao iniciar.", e);
+        }
       }
     }).catch(() => {});
 }

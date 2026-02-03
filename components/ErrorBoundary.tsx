@@ -1,5 +1,5 @@
 
-import React, { ErrorInfo, ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Trash2 } from "lucide-react";
 
 interface Props {
@@ -11,15 +11,13 @@ interface State {
   error: Error | null;
 }
 
-// Fixed: Explicitly extending React.Component and adding a constructor to ensure 'this.props' is recognized by the TypeScript compiler
-class ErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
-  }
+// Fix: Explicitly extending Component with generic Props and State types to ensure 'this.state' and 'this.props' are correctly recognized by the compiler
+class ErrorBoundary extends Component<Props, State> {
+  // Fix: Use property initializer for state to ensure it's recognized as a property of the class
+  public state: State = {
+    hasError: false,
+    error: null
+  };
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -52,6 +50,7 @@ class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public render() {
+    // Fix: Properly access state which is inherited from Component<Props, State>
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFF] p-8 text-center">
@@ -93,7 +92,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fixed: Safely accessing children from this.props which is now correctly recognized via React.Component extension
+    // Fix: Accessing this.props.children which is inherited from Component<Props, State>
     return this.props.children || null;
   }
 }

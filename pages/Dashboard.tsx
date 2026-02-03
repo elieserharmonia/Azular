@@ -21,6 +21,11 @@ const Dashboard: React.FC = () => {
   const [viewMode, setViewMode] = useState<'both' | 'planned' | 'done'>('both');
   const [period, setPeriod] = useState<number>(6);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
+  
+  // Controle de exibição do saldo no card de contas
+  const [showAccountsBalance, setShowAccountsBalance] = useState(false);
+  
+  // Controle global de visibilidade de valores
   const [showValues, setShowValues] = useState(() => {
     const saved = localStorage.getItem('azular_show_values');
     return saved === null ? true : saved === 'true';
@@ -129,6 +134,7 @@ const Dashboard: React.FC = () => {
           <button 
             onClick={() => setShowValues(!showValues)}
             className="p-3 bg-white border-2 border-blue-50 rounded-2xl text-blue-600 hover:bg-blue-50 transition-all shadow-sm"
+            title={showValues ? "Ocultar Valores" : "Mostrar Valores"}
           >
             {showValues ? <Eye size={20} /> : <EyeOff size={20} />}
           </button>
@@ -180,12 +186,35 @@ const Dashboard: React.FC = () => {
           </div>
           <div className={`text-2xl font-black tracking-tighter ${stats.gap >= 0 ? 'text-gray-900' : 'text-red-500'}`}>{maskValue(formatCurrency(stats.gap))}</div>
         </div>
-        <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50">
+        
+        {/* Card de Contas - Balão clicável para alternar entre contagem e saldo unificado */}
+        <div 
+          onClick={() => setShowAccountsBalance(!showAccountsBalance)}
+          className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50 cursor-pointer hover:border-blue-300 hover:scale-[1.02] transition-all group active:scale-95"
+        >
           <div className="flex items-center justify-between text-gray-400 mb-3">
-            <span className="text-[10px] font-black uppercase tracking-widest">Contas ({accounts.length})</span>
-            <Wallet size={20} className="text-blue-400" />
+            <span className="text-[10px] font-black uppercase tracking-widest group-hover:text-blue-600 transition-colors">
+              {showAccountsBalance ? 'Saldo Unificado' : 'Contas'}
+            </span>
+            <div className="flex items-center gap-2">
+               <button 
+                  onClick={(e) => { e.stopPropagation(); setShowValues(!showValues); }}
+                  className="text-gray-300 hover:text-blue-600 transition-colors"
+               >
+                 {showValues ? <Eye size={14} /> : <EyeOff size={14} />}
+               </button>
+               <Wallet size={20} className="text-blue-400" />
+            </div>
           </div>
-          <div className="text-2xl font-black text-gray-900 tracking-tighter">{maskValue(formatCurrency(stats.totalAccountBalance))}</div>
+          <div className="text-2xl font-black text-gray-900 tracking-tighter">
+            {showAccountsBalance 
+              ? maskValue(formatCurrency(stats.totalAccountBalance)) 
+              : accounts.length
+            }
+          </div>
+          <p className="text-[8px] font-black uppercase text-blue-300 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            Clique para {showAccountsBalance ? 'ver total de contas' : 'ver saldo total'}
+          </p>
         </div>
       </div>
 

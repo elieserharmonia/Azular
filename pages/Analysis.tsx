@@ -8,9 +8,12 @@ import { parseNumericValue } from '../utils/number';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
 } from 'recharts';
-import { BrainCircuit, Activity } from 'lucide-react';
+import { BrainCircuit, Activity, Lock, Play } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import ChartShell from '../components/ChartShell';
+import BannerAd from '../components/BannerAd';
+import RewardedAdModal from '../components/RewardedAdModal';
+import { adService } from '../services/adService';
 
 const Analysis: React.FC = () => {
   const { user } = useAuth();
@@ -18,6 +21,8 @@ const Analysis: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [showAdModal, setShowAdModal] = useState(false);
+  const [hasDeepInsights, setHasDeepInsights] = useState(adService.hasBenefit('DEEP_INSIGHTS'));
 
   useEffect(() => {
     if (!user) return;
@@ -45,16 +50,22 @@ const Analysis: React.FC = () => {
   }, [transactions, categories]);
 
   useEffect(() => {
-    if (!loading && transactions.length > 0 && !aiInsight && user) {
+    if (hasDeepInsights && !loading && transactions.length > 0 && !aiInsight && user) {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Analise essas finanças de forma muito humana e sem julgamento para o app Azular: ${transactions.length} transações. Dê um conselho de cuidado com a casa financeira em português (máx 15 palavras).`,
+        contents: `Analise essas finanças para o app Azular: ${transactions.length} transações. Dê um conselho de cuidado financeiro (máx 15 palavras).`,
       }).then((res) => setAiInsight(res.text));
     }
-  }, [loading, transactions, aiInsight, user]);
+  }, [loading, transactions, aiInsight, user, hasDeepInsights]);
 
   const COLORS = ['#2563EB', '#34D399', '#F87171', '#FBBF24', '#8B5CF6', '#EC4899'];
+
+  const handleAdComplete = () => {
+    adService.grantBenefit('DEEP_INSIGHTS');
+    setHasDeepInsights(true);
+    setShowAdModal(false);
+  };
 
   if (loading) return <div className="p-10 text-center uppercase font-black text-blue-600 animate-pulse">Analisando sua jornada...</div>;
 
@@ -67,14 +78,30 @@ const Analysis: React.FC = () => {
         </p>
       </header>
 
-      {aiInsight && (
-        <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-start gap-6 relative overflow-hidden">
-          <div className="p-3 bg-white/20 rounded-2xl"><BrainCircuit size={28} /></div>
+      {!hasDeepInsights ? (
+        <div className="bg-white p-10 rounded-[2.5rem] border-2 border-blue-50 shadow-sm flex flex-col items-center text-center gap-6 animate-in slide-in-from-top-4">
+          <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Lock size={32} /></div>
           <div>
-            <h4 className="font-black uppercase text-[10px] tracking-widest mb-1 opacity-60">Insight Azular</h4>
-            <p className="text-xl font-bold leading-tight">{aiInsight}</p>
+            <h4 className="font-black uppercase text-xs tracking-widest mb-2">Insights do Guia Azular</h4>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Apoie o projeto para liberar conselhos da nossa IA por 24h.</p>
           </div>
+          <button 
+            onClick={() => setShowAdModal(true)}
+            className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center gap-2 active:scale-95 transition-all"
+          >
+            <Play size={16} /> Liberar com Apoio
+          </button>
         </div>
+      ) : (
+        aiInsight && (
+          <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-start gap-6 relative overflow-hidden">
+            <div className="p-3 bg-white/20 rounded-2xl"><BrainCircuit size={28} /></div>
+            <div>
+              <h4 className="font-black uppercase text-[10px] tracking-widest mb-1 opacity-60">Insight Azular</h4>
+              <p className="text-xl font-bold leading-tight">{aiInsight}</p>
+            </div>
+          </div>
+        )
       )}
 
       <div className="grid grid-cols-1 gap-12">
@@ -124,6 +151,16 @@ const Analysis: React.FC = () => {
           </ResponsiveContainer>
         </ChartShell>
       </div>
+
+      <BannerAd />
+
+      {showAdModal && (
+        <RewardedAdModal 
+          benefitName="Insights Profundos IA"
+          onComplete={handleAdComplete}
+          onCancel={() => setShowAdModal(false)}
+        />
+      )}
     </div>
   );
 };

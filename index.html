@@ -9,7 +9,7 @@
     <!-- PWA Meta Tags -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#2563EB">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Azular">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/9431/9431057.png">
@@ -68,7 +68,7 @@
     </style>
     
     <script>
-        // Capturador de Erros Global (Antes de carregar o app)
+        // Captura de erro global imediata antes do JS carregar
         window.onerror = function(msg, url, line, col, error) {
             const diag = {
                 message: msg,
@@ -77,7 +77,7 @@
                 time: new Date().toISOString(),
                 ua: navigator.userAgent
             };
-            localStorage.setItem('azular_last_error', JSON.stringify(diag));
+            localStorage.setItem('azular_boot_error', JSON.stringify(diag));
             console.error("Boot Error Detected:", diag);
         };
     </script>
@@ -114,22 +114,20 @@
                     
                     <button onclick="window.location.reload()" style="background: #2563EB; color: #fff; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; margin-bottom: 0.8rem; border: none; cursor: pointer; font-size: 12px; letter-spacing: 0.05em; box-shadow: 0 10px 15px -3px rgba(37,99,235,0.3);">Recarregar</button>
                     
-                    <button onclick="clearCacheAndReload()" style="background: #F3F4F6; color: #4B5563; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; font-size: 10px; border: none; cursor: pointer; letter-spacing: 0.05em;">Limpar Tudo e Resetar</button>
-                    
-                    <div style="margin-top: 1.5rem;">
-                        <button onclick="window.location.href='/diagnostics'" style="font-size: 10px; font-weight: 900; text-transform: uppercase; color: #9CA3AF; background: none; border: none; cursor: pointer; letter-spacing: 0.05em;">Ver Diagnóstico</button>
-                    </div>
+                    <button id="show-diag" onclick="alert(localStorage.getItem('azular_boot_error') || 'Nenhum log detalhado disponível.')" style="background: #F3F4F6; color: #4B5563; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; font-size: 10px; border: none; cursor: pointer; letter-spacing: 0.05em; margin-bottom: 0.8rem;">Ver Diagnóstico</button>
+
+                    <button onclick="clearCacheAndReload()" style="background: transparent; color: #9CA3AF; width: 100%; padding: 0.5rem; font-weight: 700; text-transform: uppercase; font-size: 9px; border: none; cursor: pointer; letter-spacing: 0.05em;">Limpar Cache e Resetar</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- O Vite vai injetar o script aqui ou usamos o caminho relativo padrão -->
     <script type="module" src="/index.tsx"></script>
 
     <script>
-        // Watchdog: Se após 7 segundos o React não marcou como iniciado, mostra erro.
         window.__AZULAR_BOOTED__ = false;
+        
+        // WATCHDOG: Se em 8 segundos o React não setar __AZULAR_BOOTED__, mostra erro.
         setTimeout(() => {
             if (!window.__AZULAR_BOOTED__) {
                 const loadingState = document.getElementById('loading-state');
@@ -137,7 +135,7 @@
                 if (loadingState) loadingState.style.display = 'none';
                 if (bootError) bootError.style.display = 'block';
             }
-        }, 7000);
+        }, 8000);
 
         function clearCacheAndReload() {
             localStorage.clear();

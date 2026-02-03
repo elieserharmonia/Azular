@@ -4,16 +4,16 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/', // Recomendado para Vercel SPA
+  base: '/',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: false,
+    sourcemap: true, // Útil para debugar tela branca no mobile
     target: 'esnext',
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: false,
+        drop_console: false, // Mantemos logs para diagnóstico remoto
       }
     }
   },

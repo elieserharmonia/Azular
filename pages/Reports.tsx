@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { getTransactions, getAccounts, getCategories } from '../services/db';
 import { Transaction, Account, Category } from '../types';
-import { formatCurrency, formatDate, getMonthName } from '../utils/formatters';
-import { FileDown, Printer, Filter } from 'lucide-react';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { FileDown, Printer, Lock, Play } from 'lucide-react';
+import { adService } from '../services/adService';
+import RewardedAdModal from '../components/RewardedAdModal';
 
 const Reports: React.FC = () => {
   const { user } = useAuth();
@@ -14,8 +16,9 @@ const Reports: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAdModal, setShowAdModal] = useState(false);
+  const [hasPdfBenefit, setHasPdfBenefit] = useState(adService.hasBenefit('PDF_EXPORT'));
   
-  // Filters
   const [filterType, setFilterType] = useState<'all' | 'credit' | 'debit'>('all');
   const [filterAccount, setFilterAccount] = useState('all');
   const [filterMonth, setFilterMonth] = useState('');
@@ -68,84 +71,99 @@ const Reports: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handleAdComplete = () => {
+    adService.grantBenefit('PDF_EXPORT');
+    setHasPdfBenefit(true);
+    setShowAdModal(false);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Relatórios Detalhados</h2>
-          <p className="text-gray-500">Filtre e exporte seus dados</p>
+          <h2 className="text-3xl font-black uppercase tracking-tighter">Relatórios</h2>
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Filtre e exporte seus dados</p>
         </div>
         <div className="flex gap-2">
           <button 
             onClick={exportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-semibold hover:bg-gray-50 shadow-sm"
+            className="flex items-center gap-2 px-6 py-4 bg-white border-2 border-blue-50 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 shadow-sm transition-all"
           >
             <FileDown size={18} /> CSV
           </button>
-          <button 
-            onClick={() => navigate('/print')}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 shadow-sm"
-          >
-            <Printer size={18} /> Imprimir PDF
-          </button>
+          
+          {hasPdfBenefit ? (
+            <button 
+              onClick={() => navigate('/print')}
+              className="flex items-center gap-2 px-6 py-4 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 shadow-xl transition-all active:scale-95"
+            >
+              <Printer size={18} /> Imprimir PDF
+            </button>
+          ) : (
+            <button 
+              onClick={() => setShowAdModal(true)}
+              className="flex items-center gap-3 px-6 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 transition-all group"
+            >
+              <Lock size={16} className="text-amber-400 group-hover:scale-110 transition-transform" /> 
+              <span>PDF <span className="opacity-50">•</span> Assistir Apoio</span>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="bg-white p-6 rounded-[2rem] shadow-sm border-2 border-blue-50 grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Tipo</label>
+          <label className="block text-[8px] font-black text-gray-400 uppercase mb-2 tracking-widest">Tipo de Fluxo</label>
           <select 
             value={filterType}
             onChange={e => setFilterType(e.target.value as any)}
-            className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full border-b-2 border-gray-100 p-2 text-sm font-black uppercase outline-none focus:border-blue-600"
           >
-            <option value="all">Todos os tipos</option>
-            <option value="credit">Créditos</option>
-            <option value="debit">Débitos</option>
+            <option value="all">Todos</option>
+            <option value="credit">Entradas</option>
+            <option value="debit">Saídas</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Conta</label>
+          <label className="block text-[8px] font-black text-gray-400 uppercase mb-2 tracking-widest">Qual Conta?</label>
           <select 
             value={filterAccount}
             onChange={e => setFilterAccount(e.target.value)}
-            className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full border-b-2 border-gray-100 p-2 text-sm font-black uppercase outline-none focus:border-blue-600"
           >
-            <option value="all">Todas as contas</option>
+            <option value="all">Todas</option>
             {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Mês</label>
+          <label className="block text-[8px] font-black text-gray-400 uppercase mb-2 tracking-widest">Mês Específico</label>
           <input 
             type="month" 
             value={filterMonth}
             onChange={e => setFilterMonth(e.target.value)}
-            className="w-full border rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full border-b-2 border-gray-100 p-2 text-sm font-black uppercase outline-none focus:border-blue-600"
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="bg-white rounded-[2.5rem] shadow-sm border-2 border-blue-50 overflow-hidden mb-20">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b">
+            <thead className="text-[10px] text-gray-400 uppercase bg-gray-50 border-b">
               <tr>
-                <th className="px-6 py-3">Descrição</th>
-                <th className="px-6 py-3">Data</th>
-                <th className="px-6 py-3">Conta</th>
-                <th className="px-6 py-3">Categoria</th>
-                <th className="px-6 py-3 text-right">Valor</th>
+                <th className="px-8 py-4">Descrição</th>
+                <th className="px-8 py-4">Data</th>
+                <th className="px-8 py-4">Conta</th>
+                <th className="px-8 py-4 text-right">Valor</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-gray-50">
               {filtered.map(t => (
-                <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{t.description}</td>
-                  <td className="px-6 py-4">{formatDate(t.dueDate || t.receiveDate || '')}</td>
-                  <td className="px-6 py-4 text-gray-500">{accounts.find(a => a.id === t.accountId)?.name}</td>
-                  <td className="px-6 py-4 text-gray-500">{categories.find(c => c.id === t.categoryId)?.name}</td>
-                  <td className={`px-6 py-4 text-right font-bold ${t.type === 'credit' ? 'text-emerald-600' : 'text-red-600'}`}>
+                <tr key={t.id} className="hover:bg-blue-50/30 transition-colors">
+                  <td className="px-8 py-5 font-black text-gray-900 uppercase">{t.description}</td>
+                  <td className="px-8 py-5 text-gray-400 font-bold">{formatDate(t.dueDate || t.receiveDate || '')}</td>
+                  <td className="px-8 py-5 text-gray-400 font-black uppercase text-[10px]">{accounts.find(a => a.id === t.accountId)?.name}</td>
+                  <td className={`px-8 py-5 text-right font-black ${t.type === 'credit' ? 'text-emerald-600' : 'text-red-500'}`}>
                     {t.type === 'credit' ? '+' : '-'}{formatCurrency(t.amount)}
                   </td>
                 </tr>
@@ -153,8 +171,16 @@ const Reports: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {filtered.length === 0 && <div className="p-8 text-center text-gray-400">Nenhum dado com os filtros atuais.</div>}
+        {filtered.length === 0 && <div className="p-20 text-center text-[10px] font-black uppercase text-gray-300 tracking-widest">Nenhum dado encontrado...</div>}
       </div>
+
+      {showAdModal && (
+        <RewardedAdModal 
+          benefitName="Exportação PDF"
+          onComplete={handleAdComplete}
+          onCancel={() => setShowAdModal(false)}
+        />
+      )}
     </div>
   );
 };
