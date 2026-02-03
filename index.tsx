@@ -21,35 +21,34 @@ const initApp = () => {
       </React.StrictMode>
     );
 
-    // Marca como boot completo para o watchdog do index.html
+    // Sinaliza ao watchdog que o React iniciou com sucesso
     (window as any).__AZULAR_BOOTED__ = true;
     
-    // Remove o loader nativo
+    // Remove o loader com uma transição suave
     const loader = document.getElementById('boot-loader');
     if (loader) {
       setTimeout(() => {
-        loader.style.transition = 'opacity 0.5s ease';
         loader.style.opacity = '0';
-        setTimeout(() => loader.remove(), 500);
-      }, 200);
+        setTimeout(() => {
+          if (loader.parentNode) loader.remove();
+        }, 500);
+      }, 300);
     }
 
   } catch (err) {
-    const diag = {
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : '',
-      time: new Date().toISOString(),
-      ua: navigator.userAgent
-    };
-    localStorage.setItem('azular_boot_error', JSON.stringify(diag));
-    console.error("Critical Boot Error:", err);
+    console.error("Critical React Mount Error:", err);
+    // Em caso de erro catastrófico, o watchdog no HTML cuidará da interface de erro
   }
 };
 
+// Inicia a aplicação
 initApp();
 
-if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
+// Service Worker Registration
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').catch(err => {
+      console.warn("SW registration failed:", err);
+    });
   });
 }
