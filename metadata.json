@@ -1,0 +1,8 @@
+{
+  "id": "com.azular.app",
+  "name": "Azular",
+  "description": "Azular — cuidar do dinheiro começa em casa. Um guia humano e calmo para organizar suas finanças e realizar seus sonhos.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

@@ -1,0 +1,36 @@
+
+{
+  "id": "com.azular.app",
+  "name": "Azular — Cuidar do dinheiro começa em casa",
+  "short_name": "Azular",
+  "description": "Um guia humano e calmo para organizar suas finanças e realizar seus sonhos.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F8FAFF",
+  "theme_color": "#2563EB",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9431/9431057.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9431/9431057.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["finance", "lifestyle"],
+  "screenshots": [
+    {
+      "src": "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?q=80&w=1000",
+      "sizes": "1000x1500",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Interface intuitiva do Azular"
+    }
+  ]
+}
