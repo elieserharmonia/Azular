@@ -10,7 +10,7 @@ interface State {
   error: Error | null;
 }
 
-// Fixed: Explicitly use React.Component to ensure the TypeScript compiler correctly recognizes inherited properties like 'props' and 'state'.
+// Fix: Explicitly extend React.Component with generic Props and State to ensure 'this.props' and 'this.state' are correctly inherited and recognized by the compiler.
 class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
@@ -91,7 +91,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fixed: Correctly accessing children via this.props now that base class properties are correctly resolved.
+    // Fix: Accessing children through this.props is now valid because the class properly extends React.Component<Props, State>.
     return this.props.children || null;
   }
 }

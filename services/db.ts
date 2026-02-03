@@ -97,6 +97,17 @@ export const getCategories = async (userId: string) => {
   }
 };
 
+export const createCategory = async (userId: string, name: string, direction: 'credit' | 'debit' | 'both') => {
+  if (!userId) throw new Error("userId é obrigatório.");
+  const docRef = await addDoc(collection(db, 'categories'), {
+    userId,
+    name,
+    direction,
+    createdAt: serverTimestamp()
+  });
+  return docRef.id;
+};
+
 export const getGoals = async (userId: string) => {
   if (!userId) return [];
   const coll = collection(db, 'goals');

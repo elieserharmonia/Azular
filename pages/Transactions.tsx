@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext';
 import { Plus, Search, CheckCircle, Clock, X, RefreshCw, AlertCircle, Edit3, Trash2, ArrowRight, History, Loader2 } from 'lucide-react';
 import { serverTimestamp, collection, query, where, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import CategorySelect from '../components/CategorySelect';
 
 const INITIAL_FORM_STATE = (): Partial<Transaction> => {
   const today = getTodayDate();
@@ -42,7 +43,6 @@ const Transactions: React.FC = () => {
   const location = useLocation();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,6 +53,9 @@ const Transactions: React.FC = () => {
   const [durationMonths, setDurationMonths] = useState(12);
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
+
+  // Estado de erro de validação
+  const [categoryError, setCategoryError] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -66,14 +69,12 @@ const Transactions: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [txs, accs, cats] = await Promise.all([
+      const [txs, accs] = await Promise.all([
         getTransactions(user!.uid),
-        getAccounts(user!.uid),
-        getCategories(user!.uid)
+        getAccounts(user!.uid)
       ]);
       setTransactions(txs);
       setAccounts(accs);
-      setCategories(cats);
     } finally {
       setLoading(false);
     }
@@ -85,12 +86,21 @@ const Transactions: React.FC = () => {
     if (!tx.recurrence?.endMonth) setDurationMode('infinite');
     else setDurationMode('until_date');
     setShowModal(true);
+    setCategoryError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !formData.accountId || !formData.categoryId) {
-      notifyInfo("Selecione conta e categoria.");
+    setCategoryError('');
+
+    if (!user || !formData.accountId) {
+      notifyInfo("Selecione a conta.");
+      return;
+    }
+
+    // Validação de categoria manual
+    if (!formData.categoryId) {
+      setCategoryError("Escolha uma categoria ou crie uma nova.");
       return;
     }
 
@@ -192,6 +202,7 @@ const Transactions: React.FC = () => {
     setShowPropagationModal(false);
     setEditingTx(null);
     setFormData(INITIAL_FORM_STATE());
+    setCategoryError('');
   };
 
   const filteredTransactions = useMemo(() => {
@@ -258,7 +269,7 @@ const Transactions: React.FC = () => {
 
       {showModal && (
         <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative">
+          <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative border-2 border-blue-50">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">
                 {editingTx ? 'Ajustar Lançamento' : 'Novo Registro'}
@@ -274,7 +285,7 @@ const Transactions: React.FC = () => {
 
               <div>
                 <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Descrição</label>
-                <input required autoFocus type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                <input required autoFocus type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 transition-all" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
               </div>
 
               <div className="grid grid-cols-2 gap-8">
@@ -286,6 +297,27 @@ const Transactions: React.FC = () => {
                   <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Data</label>
                   <input required type="date" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.type === 'credit' ? formData.receiveDate : formData.dueDate} onChange={e => setFormData({...formData, [formData.type === 'credit' ? 'receiveDate' : 'dueDate']: e.target.value, competenceMonth: e.target.value.substring(0, 7)})} />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta</label>
+                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
+                    <option value="">Escolha</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                
+                <CategorySelect 
+                  userId={user!.uid}
+                  value={formData.categoryId || ''}
+                  direction={formData.type || 'debit'}
+                  onChange={(id) => {
+                    setFormData({...formData, categoryId: id});
+                    setCategoryError('');
+                  }}
+                  error={categoryError}
+                />
               </div>
 
               <div className="p-6 bg-emerald-50 rounded-[2rem] border-2 border-emerald-100 space-y-4">
@@ -301,12 +333,12 @@ const Transactions: React.FC = () => {
                  </div>
 
                  {formData.isFixed && (
-                    <div className="space-y-3 pt-4 border-t border-emerald-100">
+                    <div className="space-y-3 pt-4 border-t border-emerald-100 animate-in fade-in duration-300">
                        <div className="flex flex-col gap-2">
-                          <button type="button" onClick={() => setDurationMode('infinite')} className={`p-3 rounded-xl border-2 text-left transition-all ${durationMode === 'infinite' ? 'bg-white border-emerald-600 font-black' : 'border-transparent text-gray-400'}`}>
+                          <button type="button" onClick={() => setDurationMode('infinite')} className={`p-3 rounded-xl border-2 text-left transition-all ${durationMode === 'infinite' ? 'bg-white border-emerald-600 font-black shadow-sm' : 'border-transparent text-gray-400'}`}>
                              <span className="text-[10px] uppercase">Sem fim</span>
                           </button>
-                          <div className={`p-3 rounded-xl border-2 transition-all ${durationMode === 'fixed_months' ? 'bg-white border-emerald-600' : 'border-transparent'}`}>
+                          <div className={`p-3 rounded-xl border-2 transition-all ${durationMode === 'fixed_months' ? 'bg-white border-emerald-600 shadow-sm' : 'border-transparent'}`}>
                              <div className="flex items-center justify-between">
                                 <button type="button" onClick={() => setDurationMode('fixed_months')} className={`text-[10px] uppercase font-black ${durationMode === 'fixed_months' ? 'text-emerald-600' : 'text-gray-400'}`}>Por X meses</button>
                                 {durationMode === 'fixed_months' && (
@@ -319,11 +351,12 @@ const Transactions: React.FC = () => {
                  )}
               </div>
 
-              <button type="submit" className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95">
+              <button type="submit" className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">
                 {editingTx ? 'Confirmar Ajuste' : 'Azular Registro'}
               </button>
             </form>
 
+            {/* Modal de Propagação Modesto */}
             {showPropagationModal && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
                 <div className="w-full max-w-sm bg-white border-2 border-emerald-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">

@@ -19,6 +19,7 @@ import { db } from '../firebase';
 import ChartShell from '../components/ChartShell';
 import SimpleBars from '../components/SimpleBars';
 import BannerAd from '../components/BannerAd';
+import CategorySelect from '../components/CategorySelect';
 
 const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
   type: 'debit',
@@ -44,7 +45,6 @@ const Provision: React.FC = () => {
   const { notifySuccess, notifyError, notifyInfo } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [showProvisionModal, setShowProvisionModal] = useState(false);
@@ -57,6 +57,9 @@ const Provision: React.FC = () => {
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
 
+  // Estado de erro de validação
+  const [categoryError, setCategoryError] = useState('');
+
   useEffect(() => {
     if (!user) return;
     loadData();
@@ -65,14 +68,12 @@ const Provision: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [txs, accs, cats] = await Promise.all([
+      const [txs, accs] = await Promise.all([
         getTransactions(user!.uid),
-        getAccounts(user!.uid),
-        getCategories(user!.uid)
+        getAccounts(user!.uid)
       ]);
       setTransactions(txs);
       setAccounts(accs);
-      setCategories(cats);
     } catch (err) {
       notifyError("Erro ao carregar dados.");
     } finally {
@@ -113,12 +114,20 @@ const Provision: React.FC = () => {
     if (!item.recurrence.endMonth) setDurationMode('infinite');
     else setDurationMode('until_date');
     setShowProvisionModal(true);
+    setCategoryError('');
   };
 
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !formData.accountId || !formData.categoryId) {
-      notifyInfo("Selecione Conta e Categoria.");
+    setCategoryError('');
+
+    if (!user || !formData.accountId) {
+      notifyInfo("Selecione a Conta.");
+      return;
+    }
+
+    if (!formData.categoryId) {
+      setCategoryError("Escolha uma categoria ou crie uma nova.");
       return;
     }
 
@@ -176,6 +185,7 @@ const Provision: React.FC = () => {
     setEditingItem(null);
     setFormData(INITIAL_PROVISION_STATE());
     setDurationMode('infinite');
+    setCategoryError('');
   };
 
   const handlePropagationSelection = async (scope: 'single' | 'all' | 'future') => {
@@ -193,32 +203,23 @@ const Provision: React.FC = () => {
       };
 
       if (scope === 'single') {
-        // Apenas este mês: Editamos o documento específico
         batch.update(doc(db, 'transactions', editingItem.id!), cleanUpdates);
       } 
       else if (scope === 'future') {
-        // Split: Encerramos a recorrência antiga e criamos uma nova do mês atual em diante
         const prevMonth = getPreviousMonth(editingItem.competenceMonth);
-        
-        // 1. Encerrar regra antiga no mês anterior
-        // Nota: Em Azular, se os itens futuros já existem no DB, precisamos lidar com eles.
-        // Se for um template puro, só alteramos o template. Aqui, buscamos os físicos.
         const q = query(
           collection(db, 'transactions'), 
           where('recurrence.parentId', '==', editingItem.recurrence.parentId),
           where('userId', '==', user.uid)
         );
         const snap = await getDocs(q);
-        
         const newParentId = crypto.randomUUID();
 
         snap.docs.forEach(d => {
           const data = d.data();
           if (data.competenceMonth < editingItem.competenceMonth) {
-            // Itens passados: Encerramos a validade para não herdar nova regra
             batch.update(d.ref, { 'recurrence.endMonth': prevMonth });
           } else {
-            // Itens de hoje em diante: Aplicamos nova regra e novo parentId (split de série)
             batch.update(d.ref, { 
               ...cleanUpdates, 
               'recurrence.parentId': newParentId,
@@ -229,7 +230,6 @@ const Provision: React.FC = () => {
         });
       } 
       else if (scope === 'all') {
-        // Tudo: Update geral em todos os membros do parentId
         const q = query(
           collection(db, 'transactions'), 
           where('recurrence.parentId', '==', editingItem.recurrence.parentId),
@@ -332,7 +332,6 @@ const Provision: React.FC = () => {
 
       <BannerAd />
 
-      {/* Modal Principal de Edição */}
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative border-2 border-blue-50">
@@ -409,7 +408,7 @@ const Provision: React.FC = () => {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta</label>
                   <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
@@ -417,13 +416,17 @@ const Provision: React.FC = () => {
                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Categoria</label>
-                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
-                    <option value="">Escolha</option>
-                    {categories.filter(c => c.direction === formData.type || c.direction === 'both').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+                
+                <CategorySelect 
+                  userId={user!.uid}
+                  value={formData.categoryId || ''}
+                  direction={formData.type || 'debit'}
+                  onChange={(id) => {
+                    setFormData({...formData, categoryId: id});
+                    setCategoryError('');
+                  }}
+                  error={categoryError}
+                />
               </div>
 
               <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">
@@ -431,7 +434,7 @@ const Provision: React.FC = () => {
               </button>
             </form>
 
-            {/* Modal Modesto de Propagação (Balão/Overlay Leve) */}
+            {/* Modal Modesto de Propagação */}
             {showPropagationModal && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
                 <div className="w-full max-w-sm bg-white border-2 border-blue-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
