@@ -21,10 +21,10 @@ const initApp = () => {
       </React.StrictMode>
     );
 
-    // Sinaliza ao watchdog que o React iniciou com sucesso
+    // Sinaliza ao watchdog que o JS carregou e o React montou
     (window as any).__AZULAR_BOOTED__ = true;
     
-    // Remove o loader com uma transição suave
+    // Remove o loader com transição
     const loader = document.getElementById('boot-loader');
     if (loader) {
       setTimeout(() => {
@@ -36,19 +36,20 @@ const initApp = () => {
     }
 
   } catch (err) {
-    console.error("Critical React Mount Error:", err);
-    // Em caso de erro catastrófico, o watchdog no HTML cuidará da interface de erro
+    const diag = {
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : '',
+      time: new Date().toISOString()
+    };
+    localStorage.setItem('azular_last_error', JSON.stringify(diag));
+    console.error("Critical React Error:", err);
   }
 };
 
-// Inicia a aplicação
 initApp();
 
-// Service Worker Registration
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(err => {
-      console.warn("SW registration failed:", err);
-    });
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
 }

@@ -66,6 +66,21 @@
             margin: auto;
         }
     </style>
+    
+    <script>
+        // Capturador de Erros Global (Antes de carregar o app)
+        window.onerror = function(msg, url, line, col, error) {
+            const diag = {
+                message: msg,
+                url: url,
+                line: line,
+                time: new Date().toISOString(),
+                ua: navigator.userAgent
+            };
+            localStorage.setItem('azular_last_error', JSON.stringify(diag));
+            console.error("Boot Error Detected:", diag);
+        };
+    </script>
 <script type="importmap">
 {
   "imports": {
@@ -86,7 +101,6 @@
 </head>
 <body class="text-gray-900">
     <div id="root">
-        <!-- Este loader será removido pelo index.tsx assim que o React carregar -->
         <div id="boot-loader">
             <div id="loading-state">
                 <div class="spinner"></div>
@@ -98,24 +112,23 @@
                     <h1 style="font-weight: 900; font-size: 22px; text-transform: uppercase; color: #111827; margin-bottom: 0.5rem; letter-spacing: -0.02em;">Ops! Falha no Início</h1>
                     <p style="font-size: 14px; color: #6B7280; margin-bottom: 2rem; line-height: 1.5;">O Azular não conseguiu carregar no seu dispositivo.</p>
                     
-                    <button onclick="window.location.reload()" style="background: #2563EB; color: #fff; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; margin-bottom: 0.8rem; border: none; cursor: pointer; font-size: 12px; letter-spacing: 0.05em; shadow: 0 10px 15px -3px rgba(37,99,235,0.3);">Recarregar</button>
+                    <button onclick="window.location.reload()" style="background: #2563EB; color: #fff; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; margin-bottom: 0.8rem; border: none; cursor: pointer; font-size: 12px; letter-spacing: 0.05em; box-shadow: 0 10px 15px -3px rgba(37,99,235,0.3);">Recarregar</button>
                     
                     <button onclick="clearCacheAndReload()" style="background: #F3F4F6; color: #4B5563; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; font-size: 10px; border: none; cursor: pointer; letter-spacing: 0.05em;">Limpar Tudo e Resetar</button>
                     
                     <div style="margin-top: 1.5rem;">
-                        <a href="/diagnostics" style="font-size: 10px; font-weight: 900; text-transform: uppercase; color: #9CA3AF; text-decoration: none; letter-spacing: 0.05em;">Ver Diagnóstico</a>
+                        <button onclick="window.location.href='/diagnostics'" style="font-size: 10px; font-weight: 900; text-transform: uppercase; color: #9CA3AF; background: none; border: none; cursor: pointer; letter-spacing: 0.05em;">Ver Diagnóstico</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- CARREGAMENTO DO APP (CRÍTICO) -->
+    <!-- O Vite vai injetar o script aqui ou usamos o caminho relativo padrão -->
     <script type="module" src="/index.tsx"></script>
 
     <script>
         // Watchdog: Se após 7 segundos o React não marcou como iniciado, mostra erro.
-        // Aumentado para 7s para dar fôlego a conexões lentas no mobile.
         window.__AZULAR_BOOTED__ = false;
         setTimeout(() => {
             if (!window.__AZULAR_BOOTED__) {
@@ -123,21 +136,18 @@
                 const bootError = document.getElementById('boot-error');
                 if (loadingState) loadingState.style.display = 'none';
                 if (bootError) bootError.style.display = 'block';
-                console.error("Azular: Boot Timeout. O React não inicializou a tempo.");
             }
         }, 7000);
 
         function clearCacheAndReload() {
-            if(confirm("Isso irá limpar os dados temporários e tentar um novo carregamento. Continuar?")) {
-                localStorage.clear();
-                sessionStorage.clear();
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(regs => {
-                        for(let reg of regs) reg.unregister();
-                    });
-                }
-                window.location.href = '/?reset=' + Date.now();
+            localStorage.clear();
+            sessionStorage.clear();
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                    for(let reg of regs) reg.unregister();
+                });
             }
+            window.location.reload(true);
         }
     </script>
 </body>

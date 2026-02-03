@@ -1,5 +1,5 @@
 
-import React, { ErrorInfo, ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Trash2 } from "lucide-react";
 
 interface Props {
@@ -11,8 +11,8 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Extending React.Component directly to ensure TypeScript correctly identifies inherited properties like 'props'
-class ErrorBoundary extends React.Component<Props, State> {
+// Fix: Explicitly importing and extending Component from 'react' to ensure TypeScript recognizes 'this.props'
+class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null
