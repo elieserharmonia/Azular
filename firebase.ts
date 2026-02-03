@@ -1,10 +1,9 @@
 
 import { initializeApp } from "firebase/app";
-// Use standard modular imports for Auth and Firestore from the Firebase SDK
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getAnalytics, isSupported } from "firebase/analytics";
 
-// Configuração do Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyAzL6XU1p62YK0Nc5uMwcofHegTwW_Eoig",
   authDomain: "financeiro-domestico-d0bde.firebaseapp.com",
@@ -14,10 +13,24 @@ const firebaseConfig = {
   appId: "1:903140061132:web:20611e8ba37400fce0f769",
 };
 
-// Inicializa Firebase
 const app = initializeApp(firebaseConfig);
 
-// EXPORTES QUE O APP PRECISA
-// getAuth and getFirestore are the correct modular exports for Firebase v9+
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Proteção Crítica para Analytics no Android
+export let analytics = null;
+isSupported().then(supported => {
+  if (supported && typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
+    try {
+      analytics = getAnalytics(app);
+      console.log("Azular: Analytics carregado com sucesso.");
+    } catch (e) {
+      console.warn("Azular: Analytics bloqueado por protocolo ou erro de inicialização.", e);
+    }
+  } else {
+    console.log("Azular: Analytics desativado (Ambiente Mobile/File)");
+  }
+}).catch(err => {
+  console.error("Azular: Erro ao verificar suporte de Analytics", err);
+});

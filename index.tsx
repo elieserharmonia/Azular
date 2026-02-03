@@ -1,30 +1,39 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { HashRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 
-// Diagnóstico de inicialização (visível no Logcat do Android Studio)
-console.log('Azular: Inicializando aplicação...');
-console.log('Azular: Ambiente:', window.location.origin);
+// 1. Handlers Globais para capturar erros antes do React montar
+window.onerror = (message, source, lineno, colno, error) => {
+  console.error("GLOBAL ERROR CAPTURED:", message);
+  const diag = {
+    message: String(message),
+    source,
+    lineno,
+    colno,
+    stack: error?.stack,
+    time: new Date().toISOString(),
+    env: 'global_handler'
+  };
+  localStorage.setItem('azular_last_error', JSON.stringify(diag));
+};
 
-// Registro do Service Worker para PWA (apenas se disponível e não for Capacitor)
-if ('serviceWorker' in navigator && !window.location.href.includes('android_asset')) {
-  window.addEventListener('load', () => {
-    try {
-      const swUrl = new URL('./sw.js', window.location.href).href;
-      navigator.serviceWorker.register(swUrl)
-        .then((registration) => {
-          console.log('Azular SW registrado:', registration.scope);
-        })
-        .catch((error) => {
-          console.warn('Aviso: SW não registrado:', error.message);
-        });
-    } catch (err) {
-      console.error('Erro SW URL:', err);
-    }
-  });
-}
+window.onunhandledrejection = (event) => {
+  console.error("PROMISE REJECTION CAPTURED:", event.reason);
+  const diag = {
+    message: "Promise Unhandled: " + String(event.reason),
+    stack: event.reason?.stack,
+    time: new Date().toISOString(),
+    env: 'unhandled_rejection'
+  };
+  localStorage.setItem('azular_last_error', JSON.stringify(diag));
+};
+
+// 2. Diagnóstico de inicialização
+console.log('Azular: Booting...');
+console.log('Azular: Protocol:', window.location.protocol);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -32,10 +41,14 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+
+// 3. Renderização com Contexto de Roteador
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <HashRouter>
+        <App />
+      </HashRouter>
     </ErrorBoundary>
   </React.StrictMode>
 );

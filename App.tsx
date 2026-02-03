@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -18,6 +18,7 @@ import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import PrintReport from './pages/PrintReport';
 import RestartPlan from './pages/RestartPlan';
+import Diagnostics from './pages/Diagnostics';
 
 // Components
 import Layout from './components/Layout';
@@ -48,22 +49,26 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (userDoc.exists()) {
-          setUserProfile(userDoc.data());
-        } else {
-          const defaultProfile = {
-            uid: currentUser.uid,
-            displayName: currentUser.displayName || 'Usuário',
-            email: currentUser.email,
-            currency: 'BRL',
-            locale: 'pt-BR',
-            timezone: 'America/Sao_Paulo',
-            monthStartDay: 1,
-            avatarUrl: null
-          };
-          await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
-          setUserProfile(defaultProfile);
+        try {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists()) {
+            setUserProfile(userDoc.data());
+          } else {
+            const defaultProfile = {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || 'Usuário',
+              email: currentUser.email,
+              currency: 'BRL',
+              locale: 'pt-BR',
+              timezone: 'America/Sao_Paulo',
+              monthStartDay: 1,
+              avatarUrl: null
+            };
+            await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
+            setUserProfile(defaultProfile);
+          }
+        } catch (e) {
+          console.error("Erro ao carregar perfil:", e);
         }
       } else {
         setUserProfile(null);
@@ -75,29 +80,27 @@ const App: React.FC = () => {
 
   return (
     <AuthContext.Provider value={{ user, loading, userProfile }}>
-      <HashRouter>
-        {/* A key={user?.uid} força o reset completo do estado visual ao trocar de usuário */}
-        <Routes key={user?.uid}>
-          <Route path="/login" element={user ? <Navigate to="/app/dashboard" /> : <Login />} />
-          <Route path="/signup" element={user ? <Navigate to="/app/dashboard" /> : <Signup />} />
-          <Route path="/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
-          
-          <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="analysis" element={<Analysis />} />
-            <Route path="transactions" element={<Transactions />} />
-            <Route path="provision" element={<Provision />} />
-            <Route path="restart-plan" element={<RestartPlan />} />
-            <Route path="accounts" element={<Accounts />} />
-            <Route path="goals" element={<Goals />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="profile" element={<Profile />} />
-            <Route index element={<Navigate to="/app/dashboard" />} />
-          </Route>
+      <Routes key={user?.uid}>
+        <Route path="/login" element={user ? <Navigate to="/app/dashboard" /> : <Login />} />
+        <Route path="/signup" element={user ? <Navigate to="/app/dashboard" /> : <Signup />} />
+        <Route path="/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
+        <Route path="/diagnostics" element={<Diagnostics />} />
+        
+        <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="analysis" element={<Analysis />} />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="provision" element={<Provision />} />
+          <Route path="restart-plan" element={<RestartPlan />} />
+          <Route path="accounts" element={<Accounts />} />
+          <Route path="goals" element={<Goals />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="profile" element={<Profile />} />
+          <Route index element={<Navigate to="/app/dashboard" />} />
+        </Route>
 
-          <Route path="/" element={<Navigate to="/app/dashboard" />} />
-        </Routes>
-      </HashRouter>
+        <Route path="/" element={<Navigate to="/app/dashboard" />} />
+      </Routes>
     </AuthContext.Provider>
   );
 };
