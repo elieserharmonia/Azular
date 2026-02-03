@@ -54,7 +54,6 @@ const Transactions: React.FC = () => {
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
 
-  // Estado de erro de validação
   const [categoryError, setCategoryError] = useState('');
 
   useEffect(() => {
@@ -98,7 +97,6 @@ const Transactions: React.FC = () => {
       return;
     }
 
-    // Validação de categoria manual
     if (!formData.categoryId) {
       setCategoryError("Escolha uma categoria ou crie uma nova.");
       return;
@@ -356,7 +354,6 @@ const Transactions: React.FC = () => {
               </button>
             </form>
 
-            {/* Modal de Propagação Modesto */}
             {showPropagationModal && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
                 <div className="w-full max-w-sm bg-white border-2 border-emerald-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
