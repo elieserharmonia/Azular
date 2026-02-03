@@ -1,9 +1,10 @@
 
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import React, { ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Terminal } from "lucide-react";
 
 interface Props {
-  children: ReactNode;
+  // Make children optional to satisfy JSX validation when used as a wrapper component
+  children?: ReactNode;
 }
 
 interface State {
@@ -12,18 +13,24 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-    errorInfo: null
-  };
+// Explicitly extend React.Component to ensure this.state, this.props, and this.setState are properly inherited
+class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    // Initialize state in the constructor for better compatibility with different TypeScript versions
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null
+    };
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error, errorInfo: null };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Correctly using setState on the Component instance
     this.setState({ errorInfo });
     console.error("CRITICAL APP ERROR:", error, errorInfo);
     
@@ -47,6 +54,7 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   public render() {
+    // Accessing this.state is now valid due to proper Component inheritance
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFF] p-8 text-center">
@@ -98,6 +106,7 @@ class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    // Accessing this.props is now correctly resolved through inheritance
     return this.props.children;
   }
 }

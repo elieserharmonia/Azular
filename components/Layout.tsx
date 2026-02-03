@@ -16,13 +16,18 @@ import {
   Waves,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus
+  Plus,
+  Download
 } from 'lucide-react';
 import { useAuth } from '../App';
+import PWAStatus from './PWAStatus';
 
 const Layout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopVisible, setIsDesktopVisible] = useState(true);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBtn, setShowInstallBtn] = useState(false);
+  
   const { userProfile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -30,6 +35,29 @@ const Layout: React.FC = () => {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location]);
+
+  useEffect(() => {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBtn(true);
+    });
+
+    window.addEventListener('appinstalled', () => {
+      setShowInstallBtn(false);
+      setDeferredPrompt(null);
+    });
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallBtn(false);
+    }
+    setDeferredPrompt(null);
+  };
 
   const navItems = [
     { to: '/app/dashboard', icon: <LayoutDashboard size={22} />, label: 'Início' },
@@ -59,6 +87,20 @@ const Layout: React.FC = () => {
   return (
     <div className={`flex flex-col min-h-screen bg-[#F8FAFF] pb-24 md:pb-0 transition-all duration-300 ${isDesktopVisible ? 'md:pl-72' : 'md:pl-0'}`}>
       
+      <PWAStatus />
+
+      {/* Botão de Instalação Mobile/Desktop */}
+      {showInstallBtn && (
+        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in slide-in-from-bottom-4">
+          <button 
+            onClick={handleInstallClick}
+            className="bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-3 font-black uppercase text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all"
+          >
+            <Download size={16} /> Instalar Azular
+          </button>
+        </div>
+      )}
+
       {/* FAB - Botão Flutuante Global */}
       <button 
         onClick={() => navigate('/app/transactions', { state: { openModal: true } })}
@@ -132,7 +174,6 @@ const Layout: React.FC = () => {
               </div>
             </div>
             
-            {/* Botão de Atalho Rápido no Sidebar */}
             <button 
                onClick={() => navigate('/app/transactions', { state: { openModal: true } })}
                className="w-full bg-white text-blue-600 p-4 rounded-2xl flex items-center justify-center gap-3 font-black uppercase text-[10px] tracking-widest shadow-xl mb-6 hover:scale-[1.02] transition-all active:scale-95"
@@ -183,7 +224,6 @@ const Layout: React.FC = () => {
         </div>
       </main>
 
-      {/* Navegação Mobile Inferior */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-blue-50 flex justify-around items-center py-3 px-2 z-30 md:hidden shadow-[0_-8px_30px_rgba(37,99,235,0.08)]">
         {navItems.slice(0, 5).map((item) => (
           <NavLink
@@ -196,7 +236,6 @@ const Layout: React.FC = () => {
             }
           >
             <div className={`${location.pathname === item.to ? 'bg-blue-50 p-2 rounded-2xl' : ''} transition-all`}>
-              {/* Fix: Cast item.icon to React.ReactElement<any> to avoid prop type mismatch when cloning */}
               {React.cloneElement(item.icon as React.ReactElement<any>, { size: 22 })}
             </div>
             <span className="text-[9px] font-black uppercase tracking-tighter mt-1">{item.label.split(' ')[0]}</span>

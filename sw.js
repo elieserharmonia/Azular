@@ -1,45 +1,65 @@
 
-const CACHE_NAME = 'azular-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+const CACHE_NAME = 'azular-v2-cache';
+const STATIC_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  'https://cdn.tailwindcss.com',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap'
 ];
 
-// Instalação do Service Worker
+// Instala e faz o cache do App Shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      console.log('Azular SW: Caching App Shell');
+      return cache.addAll(STATIC_ASSETS);
     })
   );
   self.skipWaiting();
 });
 
-// Ativação e limpeza de caches antigos
+// Limpa caches antigos
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames.filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
       );
     })
   );
+  self.clients.claim();
 });
 
-// Estratégia: Cache First, falling back to Network
+// Estratégia de Fetch
 self.addEventListener('fetch', (event) => {
-  // Ignorar requisições de API (Firebase) para não quebrar a sincronização
-  if (event.request.url.includes('googleapis') || event.request.url.includes('firebase')) {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Ignora requisições de API do Firebase (deixamos o SDK do Firebase cuidar do offline deles)
+  if (url.origin.includes('firestore.googleapis.com') || url.origin.includes('firebase')) {
     return;
   }
 
+  // Para documentos HTML e Assets (Cache First)
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request).then((networkResponse) => {
-        // Opcional: Adicionar novos assets ao cache dinamicamente
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) return cachedResponse;
+      
+      return fetch(request).then((networkResponse) => {
+        // Opcional: Cachear assets descobertos dinamicamente (imagens, etc)
+        if (request.method === 'GET' && networkResponse.status === 200) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseToCache);
+          });
+        }
         return networkResponse;
+      }).catch(() => {
+        // Fallback caso falte rede e não tenha no cache (ex: index.html)
+        if (request.mode === 'navigate') {
+          return caches.match('./') || caches.match('./index.html');
+        }
       });
     })
   );

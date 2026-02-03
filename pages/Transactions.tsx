@@ -4,29 +4,34 @@ import { useAuth } from '../App';
 import { useLocation } from 'react-router-dom';
 import { getTransactions, getAccounts, getCategories, addTransaction, updateTransaction } from '../services/db';
 import { Transaction, Account, Category, RecurrenceFrequency } from '../types';
-import { formatCurrency, formatDate, getCurrentMonth } from '../utils/formatters';
+import { formatCurrency, formatDate, getCurrentMonth, getTodayDate } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { Plus, Search, CheckCircle, Clock, X, RefreshCw, PlusCircle, Info, Link as LinkIcon } from 'lucide-react';
 import { serverTimestamp, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const INITIAL_FORM_STATE: Partial<Transaction> = {
-  type: 'debit',
-  costType: 'variable',
-  description: '',
-  plannedAmount: 0,
-  amount: 0,
-  status: 'done', // Padrão para registro real é finalizado
-  competenceMonth: getCurrentMonth(),
-  isFixed: false,
-  recurrence: { 
-    enabled: false, 
-    frequency: 'monthly',
-    interval: 1,
-    endDate: null,
-    occurrences: 1,
-    parentId: null
-  }
+const INITIAL_FORM_STATE = (): Partial<Transaction> => {
+  const today = getTodayDate();
+  return {
+    type: 'debit',
+    costType: 'variable',
+    description: '',
+    plannedAmount: 0,
+    amount: 0,
+    status: 'done',
+    competenceMonth: getCurrentMonth(),
+    dueDate: today,
+    receiveDate: today,
+    isFixed: false,
+    recurrence: { 
+      enabled: false, 
+      frequency: 'monthly',
+      interval: 1,
+      endDate: null,
+      occurrences: 1,
+      parentId: null
+    }
+  };
 };
 
 const Transactions: React.FC = () => {
@@ -40,14 +45,13 @@ const Transactions: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
-  const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_FORM_STATE);
+  const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_FORM_STATE());
 
   useEffect(() => {
     if (!user) return;
     loadData();
-    // Verifica se veio de um FAB global para abrir o modal direto
     if (location.state?.openModal) {
-      setFormData(INITIAL_FORM_STATE);
+      setFormData(INITIAL_FORM_STATE());
       setShowModal(true);
     }
   }, [user, location]);
@@ -98,7 +102,6 @@ const Transactions: React.FC = () => {
           userId: user.uid
         });
         
-        // Se houver vínculo com provisão, atualizar a provisão para status 'done' (ou similar logicamente)
         if (formData.linkedProvisionId) {
           const provision = transactions.find(t => t.id === formData.linkedProvisionId);
           if (provision) {
@@ -134,7 +137,7 @@ const Transactions: React.FC = () => {
           </p>
         </div>
         <button 
-          onClick={() => { setFormData(INITIAL_FORM_STATE); setEditingTx(null); setShowModal(true); }}
+          onClick={() => { setFormData(INITIAL_FORM_STATE()); setEditingTx(null); setShowModal(true); }}
           className="w-full md:w-auto bg-emerald-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 hover:scale-105 transition-all"
         >
           <Plus size={24} /> Registrar Agora
@@ -213,7 +216,6 @@ const Transactions: React.FC = () => {
               <div className="grid grid-cols-2 gap-8">
                 <div>
                    <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Real</label>
-                   {/* Fix: Cast e.target.value to any to resolve TS error since Transaction.amount is a number */}
                    <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.amount === 0 ? '' : formData.amount} onChange={e => setFormData({...formData, amount: e.target.value as any})} placeholder="0,00" />
                 </div>
                 <div>
@@ -242,7 +244,6 @@ const Transactions: React.FC = () => {
                 </div>
               </div>
 
-              {/* Vincular à Provisão */}
               <div className="bg-gray-50 p-6 rounded-[2rem] border-2 border-gray-100 space-y-4">
                  <div className="flex items-center gap-2">
                    <LinkIcon size={18} className="text-blue-600" />
