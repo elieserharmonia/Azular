@@ -10,8 +10,10 @@ import {
   ComposedChart, Line, Bar
 } from 'recharts';
 import { 
-  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X
+  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag
 } from 'lucide-react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import ChartShell from '../components/ChartShell';
 import SimpleBars from '../components/SimpleBars';
 import BannerAd from '../components/BannerAd';
@@ -44,6 +46,11 @@ const Provision: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showProvisionModal, setShowProvisionModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
+
+  // Estado para criação rápida de categoria
+  const [showQuickCategoryModal, setShowQuickCategoryModal] = useState(false);
+  const [quickCategoryName, setQuickCategoryName] = useState('');
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -142,6 +149,37 @@ const Provision: React.FC = () => {
       loadData();
     } catch (err) {
       alert("Erro ao salvar provisão.");
+    }
+  };
+
+  const handleSaveQuickCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !quickCategoryName || isSavingCategory) return;
+
+    setIsSavingCategory(true);
+    try {
+      const newCatRef = await addDoc(collection(db, 'categories'), {
+        name: quickCategoryName,
+        direction: formData.type || 'debit',
+        userId: user.uid,
+        createdAt: serverTimestamp()
+      });
+
+      // Recarrega categorias
+      const cats = await getCategories(user.uid);
+      setCategories(cats);
+
+      // Seleciona a categoria recém criada
+      setFormData(prev => ({ ...prev, categoryId: newCatRef.id }));
+      
+      // Reseta e fecha sub-modal
+      setQuickCategoryName('');
+      setShowQuickCategoryModal(false);
+    } catch (err) {
+      console.error("Erro ao criar categoria rápida:", err);
+      alert("Falha ao criar categoria.");
+    } finally {
+      setIsSavingCategory(false);
     }
   };
 
@@ -259,7 +297,7 @@ const Provision: React.FC = () => {
 
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto animate-in zoom-in duration-300">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto animate-in zoom-in duration-300 relative">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-black uppercase tracking-tighter">Provisão de Plano</h3>
               <button onClick={() => setShowProvisionModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
@@ -296,7 +334,16 @@ const Provision: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Categoria</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Categoria</label>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowQuickCategoryModal(true)}
+                      className="text-blue-600 text-[9px] font-black uppercase flex items-center gap-1 hover:underline"
+                    >
+                      <Plus size={10} /> Nova
+                    </button>
+                  </div>
                   <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
                     <option value="">Escolha</option>
                     {categories.filter(c => c.direction === formData.type || c.direction === 'both').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -311,6 +358,55 @@ const Provision: React.FC = () => {
 
               <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">Salvar no Plano</button>
             </form>
+
+            {/* Modal de Categoria Rápida (Overlay interno) */}
+            {showQuickCategoryModal && (
+              <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-[110] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
+                <div className="w-full max-w-sm space-y-8 animate-in zoom-in duration-300">
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Tag size={32} />
+                    </div>
+                    <h4 className="text-xl font-black uppercase tracking-tighter">Nova Categoria</h4>
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
+                      Para {formData.type === 'credit' ? 'Entradas Fixas' : 'Gastos Fixos'}
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleSaveQuickCategory} className="space-y-6">
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest text-center">Nome da Categoria</label>
+                      <input 
+                        required 
+                        autoFocus
+                        type="text" 
+                        className="w-full text-center text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600"
+                        value={quickCategoryName}
+                        onChange={e => setQuickCategoryName(e.target.value)}
+                        placeholder="Ex: Saúde, Lazer..."
+                      />
+                    </div>
+
+                    <div className="flex gap-4">
+                      <button 
+                        type="button"
+                        onClick={() => setShowQuickCategoryModal(false)}
+                        className="flex-1 py-4 font-black uppercase text-[10px] text-gray-400 tracking-widest"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        type="submit"
+                        disabled={isSavingCategory}
+                        className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg active:scale-95 disabled:opacity-50"
+                      >
+                        {isSavingCategory ? 'Salvando...' : 'Criar Categoria'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
