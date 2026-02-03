@@ -196,7 +196,8 @@ const Layout: React.FC = () => {
             }
           >
             <div className={`${location.pathname === item.to ? 'bg-blue-50 p-2 rounded-2xl' : ''} transition-all`}>
-              {React.cloneElement(item.icon as React.ReactElement, { size: 22 })}
+              {/* Fix: Cast item.icon to React.ReactElement<any> to avoid prop type mismatch when cloning */}
+              {React.cloneElement(item.icon as React.ReactElement<any>, { size: 22 })}
             </div>
             <span className="text-[9px] font-black uppercase tracking-tighter mt-1">{item.label.split(' ')[0]}</span>
           </NavLink>

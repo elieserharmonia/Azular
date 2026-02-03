@@ -213,7 +213,8 @@ const Transactions: React.FC = () => {
               <div className="grid grid-cols-2 gap-8">
                 <div>
                    <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Real</label>
-                   <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.amount === 0 ? '' : formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} placeholder="0,00" />
+                   {/* Fix: Cast e.target.value to any to resolve TS error since Transaction.amount is a number */}
+                   <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.amount === 0 ? '' : formData.amount} onChange={e => setFormData({...formData, amount: e.target.value as any})} placeholder="0,00" />
                 </div>
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Data</label>

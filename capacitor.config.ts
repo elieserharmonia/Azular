@@ -5,14 +5,10 @@ const config: CapacitorConfig = {
   appId: 'com.azular.app',
   appName: 'Azular',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
-    // Permite que o Firebase Auth funcione corretamente em modo local no Android
+    // Importante para garantir que o Firebase Auth consiga realizar 
+    // redirecionamentos e chamadas HTTPS corretamente de dentro do WebView
     androidScheme: 'https'
-  },
-  android: {
-    allowMixedContent: true,
-    captureInput: true
   }
 };
 
