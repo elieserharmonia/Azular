@@ -11,9 +11,9 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Explicitly extending React.Component with generic types to ensure 'props' and 'state' are correctly recognized by the TypeScript compiler
-class ErrorBoundary extends React.Component<Props, State> {
-  // Fix: Declaring state with the generic State type and using a property initializer
+// Use Component directly to ensure TypeScript correctly identifies props and state from the generic arguments.
+class ErrorBoundary extends Component<Props, State> {
+  // Fixed state initialization using generic State type
   public state: State = {
     hasError: false,
     error: null
@@ -50,7 +50,6 @@ class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public render() {
-    // Fix: Accessing hasError from the state defined in React.Component
     const { hasError } = this.state;
 
     if (hasError) {
@@ -94,7 +93,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fix: Explicitly accessing children from this.props through inheritance from React.Component
+    // Fixed: children is now correctly accessible from this.props via Component inheritance
     return this.props.children || null;
   }
 }

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { getTransactions, addTransaction, getAccounts, getCategories } from '../services/db';
+import { getTransactions, addTransaction, updateTransaction, getAccounts, getCategories, deleteTransaction } from '../services/db';
 import { Transaction, Account, Category } from '../types';
 import { formatCurrency, getCurrentMonth, getMonthName, getTodayDate } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
@@ -10,9 +10,9 @@ import {
   ComposedChart, Line, Bar
 } from 'recharts';
 import { 
-  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag
+  TrendingUp, Info, Waves, Target, CheckCircle, ChevronDown, Calendar, Plus, RefreshCw, AlertCircle, X, Tag, Edit3, Trash2, ArrowRight, History, CalendarRange
 } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import ChartShell from '../components/ChartShell';
 import SimpleBars from '../components/SimpleBars';
@@ -44,8 +44,14 @@ const Provision: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<number>(12);
   const [loading, setLoading] = useState(true);
+  
   const [showProvisionModal, setShowProvisionModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
+
+  // Estado para propagação
+  const [showPropagationModal, setShowPropagationModal] = useState(false);
+  const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
 
   // Estado para criação rápida de categoria
   const [showQuickCategoryModal, setShowQuickCategoryModal] = useState(false);
@@ -129,6 +135,12 @@ const Provision: React.FC = () => {
     return projectionData.find(m => m.key === key);
   }, [projectionData]);
 
+  const handleOpenEdit = (item: Transaction) => {
+    setEditingItem(item);
+    setFormData(item);
+    setShowProvisionModal(true);
+  };
+
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !formData.accountId || !formData.categoryId) {
@@ -136,19 +148,103 @@ const Provision: React.FC = () => {
       return;
     }
 
+    if (editingItem) {
+      // Se estamos editando, abrimos o seletor de propagação
+      setShowPropagationModal(true);
+    } else {
+      // Novo item
+      try {
+        await addTransaction({
+          ...formData as Transaction,
+          userId: user.uid,
+          plannedAmount: parseNumericValue(formData.plannedAmount),
+          amount: 0,
+          status: 'planned'
+        });
+        closeAllModals();
+        loadData();
+      } catch (err) {
+        alert("Erro ao salvar provisão.");
+      }
+    }
+  };
+
+  const closeAllModals = () => {
+    setShowProvisionModal(false);
+    setShowPropagationModal(false);
+    setEditingItem(null);
+    setFormData(INITIAL_PROVISION_STATE());
+  };
+
+  const handlePropagationSelection = async (scope: 'single' | 'all' | 'future') => {
+    if (!user || !editingItem || isProcessingPropagation) return;
+
+    setIsProcessingPropagation(true);
     try {
-      await addTransaction({
-        ...formData as Transaction,
-        userId: user.uid,
-        plannedAmount: parseNumericValue(formData.plannedAmount),
-        amount: 0,
-        status: 'planned'
-      });
-      setShowProvisionModal(false);
-      setFormData(INITIAL_PROVISION_STATE());
+      const newVal = parseNumericValue(formData.plannedAmount);
+      const newDesc = formData.description;
+      const newAcc = formData.accountId;
+      const newCat = formData.categoryId;
+
+      if (scope === 'single') {
+        await updateTransaction(editingItem.id!, {
+          plannedAmount: newVal,
+          description: newDesc,
+          accountId: newAcc,
+          categoryId: newCat
+        });
+      } else {
+        // Busca itens relacionados (mesma descrição original e categoria ou parentId)
+        const txRef = collection(db, 'transactions');
+        let q = query(
+          txRef, 
+          where('userId', '==', user.uid),
+          where('description', '==', editingItem.description),
+          where('categoryId', '==', editingItem.categoryId),
+          where('isFixed', '==', true)
+        );
+
+        const snap = await getDocs(q);
+        const batch = writeBatch(db);
+        
+        snap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const shouldUpdate = 
+            scope === 'all' || 
+            (scope === 'future' && data.competenceMonth >= editingItem.competenceMonth);
+          
+          if (shouldUpdate) {
+            batch.update(docSnap.ref, {
+              plannedAmount: newVal,
+              description: newDesc,
+              accountId: newAcc,
+              categoryId: newCat,
+              updatedAt: serverTimestamp()
+            });
+          }
+        });
+
+        await batch.commit();
+      }
+
+      closeAllModals();
       loadData();
     } catch (err) {
-      alert("Erro ao salvar provisão.");
+      console.error(err);
+      alert("Erro ao propagar alterações.");
+    } finally {
+      setIsProcessingPropagation(false);
+    }
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (window.confirm("Deseja remover este item do seu plano?")) {
+      try {
+        await deleteTransaction(id);
+        loadData();
+      } catch (err) {
+        alert("Erro ao excluir.");
+      }
     }
   };
 
@@ -242,15 +338,21 @@ const Provision: React.FC = () => {
 
             <div className="space-y-4 max-h-96 overflow-y-auto pr-2 no-scrollbar">
               {provisionedItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-transparent hover:border-blue-100 transition-all">
+                <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-transparent hover:border-blue-100 transition-all group">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black uppercase text-gray-800 leading-none">{item.description}</span>
                     <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">Recorrente • {item.competenceMonth}</span>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm font-black text-gray-900">{formatCurrency(item.plannedAmount)}</div>
-                    <div className={`text-[8px] font-black uppercase ${item.type === 'credit' ? 'text-emerald-500' : 'text-red-400'}`}>
-                      {item.type === 'credit' ? 'Entrada' : 'Saída'}
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <div className="text-sm font-black text-gray-900">{formatCurrency(item.plannedAmount)}</div>
+                      <div className={`text-[8px] font-black uppercase ${item.type === 'credit' ? 'text-emerald-500' : 'text-red-400'}`}>
+                        {item.type === 'credit' ? 'Entrada' : 'Saída'}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                       <button onClick={() => handleOpenEdit(item)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit3 size={14} /></button>
+                       <button onClick={() => handleDeleteItem(item.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 </div>
@@ -295,12 +397,15 @@ const Provision: React.FC = () => {
 
       <BannerAd />
 
+      {/* Modal Principal de Provisão */}
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto animate-in zoom-in duration-300 relative">
             <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black uppercase tracking-tighter">Provisão de Plano</h3>
-              <button onClick={() => setShowProvisionModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
+              <h3 className="text-2xl font-black uppercase tracking-tighter">
+                {editingItem ? 'Editar Planejamento' : 'Provisão de Plano'}
+              </h3>
+              <button onClick={closeAllModals} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
             </div>
 
             <form onSubmit={handleSaveProvision} className="space-y-8">
@@ -320,8 +425,8 @@ const Provision: React.FC = () => {
                    <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.plannedAmount === 0 ? '' : formData.plannedAmount} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Mês de Início</label>
-                  <input required type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.competenceMonth} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Mês de Referência</label>
+                  <input required disabled={!!editingItem} type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none disabled:opacity-50" value={formData.competenceMonth} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
                 </div>
               </div>
 
@@ -353,13 +458,17 @@ const Provision: React.FC = () => {
 
               <div className="p-6 bg-gray-50 rounded-[2rem] border-2 border-gray-100 flex items-start gap-3">
                 <Info size={18} className="text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-[9px] font-black text-gray-400 uppercase leading-relaxed">Itens de provisão aparecem no seu plano futuro para ajudar você a visualizar quanto sobrará no final de cada mês.</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase leading-relaxed">
+                  {editingItem ? 'Ao salvar, você poderá escolher como essa alteração afeta seu plano histórico.' : 'Itens de provisão aparecem no seu plano futuro para ajudar você a visualizar quanto sobrará no final de cada mês.'}
+                </p>
               </div>
 
-              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">Salvar no Plano</button>
+              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">
+                {editingItem ? 'Confirmar Edição' : 'Salvar no Plano'}
+              </button>
             </form>
 
-            {/* Modal de Categoria Rápida (Overlay interno) */}
+            {/* Sub-modal de Categoria Rápida */}
             {showQuickCategoryModal && (
               <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-[110] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
                 <div className="w-full max-w-sm space-y-8 animate-in zoom-in duration-300">
@@ -404,6 +513,69 @@ const Provision: React.FC = () => {
                       </button>
                     </div>
                   </form>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-modal de Opções de Propagação */}
+            {showPropagationModal && (
+              <div className="absolute inset-0 bg-blue-900/90 backdrop-blur-md z-[120] flex items-center justify-center p-8 rounded-[2.5rem] animate-in fade-in duration-300">
+                <div className="w-full max-w-sm space-y-8 text-white text-center animate-in zoom-in duration-300">
+                  <div>
+                    <div className="w-20 h-20 bg-white/10 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                      <RefreshCw size={40} className={isProcessingPropagation ? 'animate-spin' : ''} />
+                    </div>
+                    <h4 className="text-2xl font-black uppercase tracking-tighter">Propagar Alteração?</h4>
+                    <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest mt-2 leading-relaxed">
+                      Como essa mudança afeta seu plano de vida recorrente?
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('single')}
+                      className="w-full bg-white text-blue-900 p-5 rounded-2xl flex items-center gap-4 hover:scale-[1.02] transition-all active:scale-95 text-left disabled:opacity-50"
+                    >
+                      <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Calendar size={20} /></div>
+                      <div>
+                        <span className="font-black uppercase text-[10px] block leading-none">Apenas este mês</span>
+                        <span className="text-[8px] font-bold text-gray-400 uppercase">Altera somente o registro atual</span>
+                      </div>
+                    </button>
+
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('future')}
+                      className="w-full bg-blue-600 text-white border border-white/20 p-5 rounded-2xl flex items-center gap-4 hover:scale-[1.02] transition-all active:scale-95 text-left disabled:opacity-50"
+                    >
+                      <div className="p-3 bg-white/10 text-white rounded-xl"><ArrowRight size={20} /></div>
+                      <div>
+                        <span className="font-black uppercase text-[10px] block leading-none">Deste mês em diante</span>
+                        <span className="text-[8px] font-bold text-blue-200 uppercase">Atualiza o atual e os meses futuros</span>
+                      </div>
+                    </button>
+
+                    <button 
+                      disabled={isProcessingPropagation}
+                      onClick={() => handlePropagationSelection('all')}
+                      className="w-full bg-transparent border-2 border-white/20 text-white p-5 rounded-2xl flex items-center gap-4 hover:scale-[1.02] transition-all active:scale-95 text-left disabled:opacity-50"
+                    >
+                      <div className="p-3 bg-white/5 text-white rounded-xl"><History size={20} /></div>
+                      <div>
+                        <span className="font-black uppercase text-[10px] block leading-none">Desde o início</span>
+                        <span className="text-[8px] font-bold text-blue-200 uppercase">Atualiza todo o histórico recorrente</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  <button 
+                    disabled={isProcessingPropagation}
+                    onClick={() => setShowPropagationModal(false)}
+                    className="text-[10px] font-black uppercase text-white/40 tracking-widest"
+                  >
+                    Voltar para edição
+                  </button>
                 </div>
               </div>
             )}
