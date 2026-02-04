@@ -20,6 +20,7 @@ import Profile from './pages/Profile';
 import PrintReport from './pages/PrintReport';
 import RestartPlan from './pages/RestartPlan';
 import Diagnostics from './pages/Diagnostics';
+import AdminUsers from './pages/AdminUsers';
 
 // Components
 import Layout from './components/Layout';
@@ -71,7 +72,7 @@ const App: React.FC = () => {
         const auth = await getAuthClient();
         const db = await getDb();
         const { onAuthStateChanged } = await import('firebase/auth');
-        const { doc, getDoc, setDoc } = await import('firebase/firestore');
+        const { doc, getDoc, setDoc, serverTimestamp } = await import('firebase/firestore');
         
         unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
           setUser(currentUser);
@@ -83,10 +84,13 @@ const App: React.FC = () => {
               const defaultProfile = {
                 uid: currentUser.uid,
                 displayName: currentUser.displayName || 'Usuário',
+                fullName: currentUser.displayName || '',
                 email: currentUser.email,
                 currency: 'BRL',
                 locale: 'pt-BR',
-                monthStartDay: 1
+                monthStartDay: 1,
+                marketingOptIn: false,
+                createdAt: serverTimestamp()
               };
               await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
               setUserProfile(defaultProfile);
@@ -127,6 +131,8 @@ const App: React.FC = () => {
             <Route path="profile" element={<Profile />} />
             <Route index element={<Navigate to="/app/dashboard" />} />
           </Route>
+
+          <Route path="/admin/usuarios" element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/app/dashboard" />} />
         </Routes>

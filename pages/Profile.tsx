@@ -2,8 +2,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../App';
 import { firebaseEnabled } from '../lib/firebase';
-import { getDb } from '../services/firestoreClient';
 import { getAuthClient } from '../services/authClient';
+import { saveUserProfile } from '../services/db';
+import { useToast } from '../context/ToastContext';
 import { 
   LogOut, 
   User as UserIcon, 
@@ -16,30 +17,50 @@ import {
   Download,
   Smartphone,
   Share,
-  PlusSquare
+  PlusSquare,
+  Save,
+  Mail,
+  Phone,
+  Calendar,
+  MapPin,
+  CheckCircle,
+  Settings
 } from 'lucide-react';
 import { adService } from '../services/adService';
+import { Link } from 'react-router-dom';
+
+const MARKETING_CONSENT_TEXT = "Aceito receber comunicações, promoções e felicitações do Azular.";
 
 const Profile: React.FC = () => {
   const { user, userProfile, isPreview } = useAuth();
+  const { notifySuccess, notifyError } = useToast();
+  
   const [isUploading, setIsUploading] = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [supportWebAuthn, setSupportWebAuthn] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isPremium, setIsPremium] = useState(adService.isPremium());
-  const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   
+  // Form State
+  const [fullName, setFullName] = useState(userProfile?.fullName || '');
+  const [phone, setPhone] = useState(userProfile?.phone || '');
+  const [birthDate, setBirthDate] = useState(userProfile?.birthDate || '');
+  const [address, setAddress] = useState(userProfile?.address?.logradouro || '');
+  const [marketingOptIn, setMarketingOptIn] = useState(userProfile?.marketingOptIn || false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setSupportWebAuthn(!!window.PublicKeyCredential);
-    setBiometricEnabled(localStorage.getItem('biometric_enabled') === 'true');
-    
-    // Detectar iOS e PWA mode
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+    // Detectar PWA mode
     setIsStandalone(('standalone' in window.navigator && (window.navigator as any).standalone) || window.matchMedia('(display-mode: standalone)').matches);
-  }, []);
+    
+    if (userProfile) {
+      setFullName(userProfile.fullName || userProfile.displayName || '');
+      setPhone(userProfile.phone || '');
+      setBirthDate(userProfile.birthDate || '');
+      setAddress(userProfile.address?.logradouro || '');
+      setMarketingOptIn(userProfile.marketingOptIn || false);
+    }
+  }, [userProfile]);
 
   const handleLogout = async () => {
     if (window.confirm("Deseja sair do aplicativo?")) {
@@ -57,29 +78,37 @@ const Profile: React.FC = () => {
     }
   };
 
-  const togglePremium = () => {
-    const next = !isPremium;
-    adService.setPremium(next);
-    setIsPremium(next);
-  };
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setIsSaving(true);
+    
+    try {
+      const { serverTimestamp } = await import('firebase/firestore');
+      
+      const payload: any = {
+        fullName: fullName.trim(),
+        displayName: fullName.trim().split(' ')[0], // Atualiza o nome curto
+        phone: phone.trim(),
+        birthDate,
+        address: { logradouro: address.trim() },
+        marketingOptIn,
+        updatedAt: serverTimestamp()
+      };
 
-  const toggleBiometry = async () => {
-    if (!biometricEnabled) {
-      const confirmBio = window.confirm("Ao ativar a biometria, você poderá entrar no app usando sua digital ou reconhecimento facial.");
-      if (confirmBio) {
-        const password = window.prompt("Para confirmar, digite sua senha atual:");
-        if (password && user?.email) {
-          localStorage.setItem('biometric_enabled', 'true');
-          localStorage.setItem('bio_email', user.email);
-          localStorage.setItem('bio_pass', password);
-          setBiometricEnabled(true);
-        }
+      // Se mudou o Opt-In, registra o texto e timestamp para auditoria LGPD
+      if (marketingOptIn !== userProfile?.marketingOptIn) {
+        payload.marketingOptInAt = serverTimestamp();
+        payload.marketingOptInText = MARKETING_CONSENT_TEXT;
       }
-    } else {
-      localStorage.removeItem('biometric_enabled');
-      localStorage.removeItem('bio_email');
-      localStorage.removeItem('bio_pass');
-      setBiometricEnabled(false);
+
+      await saveUserProfile(user.uid, payload);
+      notifySuccess("Perfil atualizado com sucesso!");
+    } catch (err) {
+      console.error(err);
+      notifyError("Erro ao salvar perfil.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -101,142 +130,176 @@ const Profile: React.FC = () => {
           if (ctx) {
             ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, MAX_SIZE, MAX_SIZE);
             const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-            if (firebaseEnabled) {
-              const db = await getDb();
-              const { doc, updateDoc } = await import('firebase/firestore');
-              await updateDoc(doc(db, 'users', user.uid), { avatarUrl: compressedBase64 });
-            }
-            window.location.reload();
+            await saveUserProfile(user.uid, { avatarUrl: compressedBase64 });
+            notifySuccess("Foto atualizada!");
+            setTimeout(() => window.location.reload(), 1000);
           }
         };
         img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      alert("Erro ao processar imagem.");
+      notifyError("Erro ao processar imagem.");
     } finally {
       setIsUploading(false);
     }
   };
 
+  const isAdmin = user?.email === "apptanamaoprofissionais@gmail.com";
+
   return (
-    <div className="space-y-10 max-w-2xl mx-auto pb-20">
+    <div className="space-y-10 max-w-2xl mx-auto pb-32">
       <div className="flex flex-col items-center text-center">
         <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-          <div className="w-36 h-36 bg-white rounded-[2.8rem] flex items-center justify-center border-4 border-white shadow-2xl overflow-hidden relative">
+          <div className="w-32 h-32 bg-white rounded-[2.8rem] flex items-center justify-center border-4 border-white shadow-2xl overflow-hidden relative transition-transform hover:scale-105">
             {isUploading ? (
-              <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
             ) : userProfile?.avatarUrl ? (
               <img src={userProfile.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
             ) : (
-              <UserIcon size={48} className="text-blue-300" />
+              <UserIcon size={40} className="text-blue-300" />
             )}
             <div className="absolute inset-0 bg-blue-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Camera className="text-white" size={32} />
+              <Camera className="text-white" size={24} />
             </div>
           </div>
-          <div className="absolute -bottom-2 -right-2 p-3 bg-blue-600 text-white rounded-2xl shadow-xl border-4 border-white">
-            <ImagePlus size={20} />
+          <div className="absolute -bottom-1 -right-1 p-2 bg-blue-600 text-white rounded-xl shadow-xl border-2 border-white">
+            <ImagePlus size={16} />
           </div>
           <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
         </div>
 
-        <div className="mt-8">
-          <h2 className="text-3xl font-black text-gray-900 uppercase tracking-tighter leading-none">
-            {userProfile?.displayName || 'Usuário'}
+        <div className="mt-6">
+          <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter leading-none">
+            Olá, {userProfile?.fullName || userProfile?.displayName || 'Usuário'}
           </h2>
-          <p className="text-gray-400 font-bold text-sm tracking-widest mt-1">{user?.email}</p>
+          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mt-2">{user?.email}</p>
         </div>
       </div>
 
-      {/* Instalação PWA */}
-      {!isStandalone && (
-        <div className="space-y-6">
-          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-4">App no Celular</h3>
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border-2 border-blue-50">
-            <div className="flex items-center gap-4 mb-4 text-blue-600">
-              <Smartphone size={24} />
-              <h4 className="text-lg font-black uppercase tracking-tight">Azular na Tela Inicial</h4>
+      <form onSubmit={handleSave} className="space-y-8">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border-2 border-blue-50 space-y-6">
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+            <UserIcon size={14} className="text-blue-600" /> Dados Pessoais
+          </h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black uppercase text-gray-400 block mb-2">Nome Completo</label>
+              <div className="relative">
+                <input 
+                  required
+                  type="text" 
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                  className="w-full bg-blue-50/50 border-b-2 border-blue-100 p-4 rounded-2xl font-black text-sm outline-none focus:border-blue-600 transition-all"
+                  placeholder="Seu nome completo"
+                />
+              </div>
             </div>
-            
-            {isIOS ? (
-              <div className="space-y-4">
-                <p className="text-xs font-bold text-gray-500 uppercase leading-relaxed">No iPhone/iPad, siga estes passos para instalar:</p>
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                    <Share size={18} className="text-blue-600" />
-                    <span className="text-[10px] font-black uppercase tracking-tight">1. Toque em 'Compartilhar'</span>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                    <PlusSquare size={18} className="text-blue-600" />
-                    <span className="text-[10px] font-black uppercase tracking-tight">2. Selecione 'Adicionar à Tela de Início'</span>
-                  </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 block mb-2">E-mail (Login)</label>
+                <div className="flex items-center gap-3 p-4 bg-gray-50 border-b-2 border-gray-100 rounded-2xl text-gray-400 cursor-not-allowed">
+                  <Mail size={16} />
+                  <span className="text-sm font-bold">{user?.email}</span>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-xs font-bold text-gray-500 uppercase leading-relaxed">Para uma experiência melhor e acesso offline, instale o Azular no seu Android ou PC.</p>
-                <button 
-                  id="pwa-install-btn"
-                  className="w-full py-4 bg-blue-50 text-blue-600 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-blue-100 transition-all"
-                >
-                  <Download size={18} /> Instalar Agora
-                </button>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 block mb-2">WhatsApp / Telefone</label>
+                <div className="relative">
+                  <input 
+                    type="tel" 
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    className="w-full bg-blue-50/50 border-b-2 border-blue-100 p-4 rounded-2xl font-black text-sm outline-none focus:border-blue-600 transition-all"
+                    placeholder="(00) 00000-0000"
+                  />
+                  <Phone size={16} className="absolute right-4 top-4 text-blue-200" />
+                </div>
               </div>
-            )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 block mb-2">Nascimento</label>
+                <div className="relative">
+                  <input 
+                    type="date" 
+                    value={birthDate}
+                    onChange={e => setBirthDate(e.target.value)}
+                    className="w-full bg-blue-50/50 border-b-2 border-blue-100 p-4 rounded-2xl font-black text-sm outline-none focus:border-blue-600 transition-all"
+                  />
+                  <Calendar size={16} className="absolute right-4 top-4 text-blue-200 pointer-events-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 block mb-2">Endereço Principal</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={address}
+                    onChange={e => setAddress(e.target.value)}
+                    className="w-full bg-blue-50/50 border-b-2 border-blue-100 p-4 rounded-2xl font-black text-sm outline-none focus:border-blue-600 transition-all"
+                    placeholder="Rua, Número, Bairro, Cidade..."
+                  />
+                  <MapPin size={16} className="absolute right-4 top-4 text-blue-200" />
+                </div>
+              </div>
+            </div>
           </div>
+        </div>
+
+        <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl text-white">
+          <div className="flex items-center gap-4 mb-4">
+            <Shield size={24} />
+            <h4 className="font-black uppercase tracking-tight">Privacidade e LGPD</h4>
+          </div>
+          
+          <label className="flex items-start gap-4 cursor-pointer group">
+            <div className="relative mt-1">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={marketingOptIn} 
+                onChange={e => setMarketingOptIn(e.target.checked)} 
+              />
+              <div className="w-6 h-6 bg-white/20 border-2 border-white/40 rounded-lg peer-checked:bg-white peer-checked:border-white transition-all flex items-center justify-center">
+                <CheckCircle size={14} className={`text-blue-600 transition-opacity ${marketingOptIn ? 'opacity-100' : 'opacity-0'}`} />
+              </div>
+            </div>
+            <span className="text-[10px] font-bold uppercase leading-relaxed text-blue-50">
+              {MARKETING_CONSENT_TEXT}
+            </span>
+          </label>
+        </div>
+
+        <button 
+          disabled={isSaving}
+          type="submit"
+          className="w-full py-6 bg-gray-900 text-white rounded-[2rem] font-black uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all disabled:opacity-50"
+        >
+          {isSaving ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+          {isSaving ? 'Salvando...' : 'Atualizar Perfil'}
+        </button>
+      </form>
+
+      {isAdmin && (
+        <div className="space-y-6">
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Administração</h3>
+          <Link 
+            to="/admin/usuarios"
+            className="block p-8 bg-amber-50 border-2 border-amber-100 rounded-[2.5rem] hover:bg-amber-100 transition-colors group"
+          >
+            <div className="flex items-center gap-4 mb-2 text-amber-600">
+              <Settings size={24} />
+              <h4 className="text-lg font-black uppercase tracking-tight">Exportação de Leads</h4>
+            </div>
+            <p className="text-[10px] font-bold uppercase text-amber-700">Acesso restrito ao e-mail administrador. Visualize usuários que optaram por receber comunicações.</p>
+          </Link>
         </div>
       )}
-
-      <div className="space-y-6">
-        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Apoio ao Projeto</h3>
-        <div 
-          onClick={togglePremium}
-          className={`p-8 rounded-[2.5rem] shadow-xl border-2 transition-all cursor-pointer group active:scale-[0.98] ${isPremium ? 'bg-blue-600 border-blue-400 text-white' : 'bg-white border-blue-50 text-gray-900'}`}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className={`p-4 rounded-2xl ${isPremium ? 'bg-white/20' : 'bg-blue-50 text-blue-600'}`}>
-              <Sparkles size={24} />
-            </div>
-            {isPremium && (
-              <div className="bg-white/20 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">Premium Ativo</div>
-            )}
-          </div>
-          <h4 className="text-xl font-black uppercase tracking-tighter mb-2">
-            {isPremium ? 'Assinante Azular' : 'Remover Anúncios'}
-          </h4>
-          <p className={`text-[10px] font-bold uppercase tracking-widest leading-relaxed ${isPremium ? 'text-blue-100' : 'text-gray-400'}`}>
-            {isPremium 
-              ? 'Obrigado por apoiar o desenvolvimento do Azular 💙.' 
-              : 'Remova os banners e libere PDFs e Insights sem precisar assistir anúncios.'}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Segurança e Acesso</h3>
-        <div className="bg-white rounded-[2rem] shadow-sm border-2 border-blue-50 overflow-hidden">
-          {supportWebAuthn && (
-            <div className="p-6 flex items-center justify-between border-b border-gray-50">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Fingerprint size={20} /></div>
-                <div>
-                  <span className="font-black uppercase text-xs block text-gray-700">Acesso Biométrico</span>
-                  <span className="text-[10px] text-gray-400 font-bold uppercase">Entrar sem digitar senha</span>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={biometricEnabled} onChange={toggleBiometry} />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-          )}
-          <div className="p-6 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer text-gray-700">
-            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><Shield size={20} /></div>
-            <span className="font-black uppercase text-xs">Dispositivo Autorizado</span>
-          </div>
-        </div>
-      </div>
 
       <div className="pt-4">
         <button 

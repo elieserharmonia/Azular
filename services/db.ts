@@ -1,10 +1,9 @@
 
-// src/services/db.ts
 import { firebaseEnabled } from '../lib/firebase';
 import { getDb } from './firestoreClient';
-import { Transaction, Account, Category, Goal, Debt } from '../types';
+import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
 
-// Motor de persistência local para Modo Demo (AI Studio Preview)
+// Motor de persistência local para Modo Demo
 const demoStore = {
   get: (key: string) => {
     const data = localStorage.getItem(`azular_demo_${key}`);
@@ -19,6 +18,37 @@ const demoStore = {
     demoStore.set(key, [...data, newItem]);
     return newItem;
   }
+};
+
+export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
+  if (!firebaseEnabled) return null;
+  const db = await getDb();
+  const { doc, getDoc } = await import('firebase/firestore');
+  const snap = await getDoc(doc(db, 'users', uid));
+  return snap.exists() ? snap.data() as UserProfile : null;
+};
+
+export const saveUserProfile = async (uid: string, data: Partial<UserProfile>) => {
+  if (!firebaseEnabled) return;
+  const db = await getDb();
+  const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+  return setDoc(doc(db, 'users', uid), { 
+    ...data, 
+    uid, 
+    updatedAt: serverTimestamp() 
+  }, { merge: true });
+};
+
+export const getAdminUsersForExport = async () => {
+  if (!firebaseEnabled) return [];
+  const db = await getDb();
+  const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
+  const q = query(
+    collection(db, 'users'), 
+    where('marketingOptIn', '==', true)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data() as UserProfile);
 };
 
 export const getTransactions = async (userId: string, competenceMonth?: string) => {

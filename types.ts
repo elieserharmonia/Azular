@@ -8,12 +8,32 @@ export type CostType = 'fixed' | 'variable';
 export interface UserProfile {
   uid: string;
   displayName: string | null;
+  fullName?: string;
   email: string | null;
+  phone?: string;
+  birthDate?: string;
+  address?: {
+    cep?: string;
+    logradouro?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cidade?: string;
+    estado?: string;
+  };
   currency: string;
   locale: string;
   timezone: string;
   avatarUrl?: string;
   monthStartDay: number;
+  
+  // LGPD Consent
+  marketingOptIn: boolean;
+  marketingOptInAt?: any; // Timestamp
+  marketingOptInText?: string;
+  
+  createdAt: any;
+  updatedAt?: any;
 }
 
 export interface Account {
@@ -66,15 +86,15 @@ export interface Transaction {
   dueDate?: string; 
   receiveDate?: string; 
   status: TransactionStatus;
-  isFixed: boolean; // Flag de Recorrência
+  isFixed: boolean;
   linkedProvisionId?: string | null;
   recurrence: {
     enabled: boolean;
     frequency: RecurrenceFrequency;
     interval: number | null;
     startMonth: string;
-    endMonth: string | null; // NULL = Sem fim
-    parentId: string | null; // ID da série
+    endMonth: string | null;
+    parentId: string | null;
   };
   notes?: string;
   createdAt: any;

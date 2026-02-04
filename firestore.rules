@@ -7,51 +7,57 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner() {
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "apptanamaoprofissionais@gmail.com";
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isDataOwner() {
       return isSignedIn() && request.resource.data.userId == request.auth.uid;
     }
 
-    function isOwnerRead(resourceData) {
-      return isSignedIn() && resourceData.userId == request.auth.uid;
+    function isReadOwner(resourceData) {
+      return (isSignedIn() && resourceData.userId == request.auth.uid) || isAdmin();
     }
 
     match /users/{userId} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      // Usuário lê o próprio perfil ou Admin lê para exportação
+      allow read: if isOwner(userId) || isAdmin();
+      // Apenas o dono escreve no próprio perfil
+      allow write: if isOwner(userId);
     }
 
     match /accounts/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
+      allow create: if isDataOwner();
+      allow read, update, delete: if isReadOwner(resource.data);
     }
 
     match /categories/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
+      allow create: if isDataOwner();
+      allow read, update, delete: if isReadOwner(resource.data);
     }
 
     match /transactions/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
-    }
-
-    match /budgets/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
+      allow create: if isDataOwner();
+      allow read, update, delete: if isReadOwner(resource.data);
     }
 
     match /goals/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
+      allow create: if isDataOwner();
+      allow read, update, delete: if isReadOwner(resource.data);
     }
 
     match /goalContributions/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
+      allow create: if isDataOwner();
+      allow read, update, delete: if isReadOwner(resource.data);
     }
 
     match /debts/{docId} {
-      allow create: if isOwner();
-      allow read, update, delete: if isOwnerRead(resource.data);
+      allow create: if isDataOwner();
+      allow read, update, delete: if isReadOwner(resource.data);
     }
   }
 }
