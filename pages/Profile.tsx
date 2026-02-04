@@ -1,14 +1,13 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../App';
-import { auth, db } from '../firebase';
-import { signOut } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
-import { LogOut, User as UserIcon, Shield, Bell, HelpCircle, Camera, Loader2, ImagePlus, Fingerprint, Smartphone, Sparkles, Heart } from 'lucide-react';
+import { firebaseEnabled } from '../lib/firebase';
+import { getDb } from '../services/firestoreClient';
+import { getAuthClient } from '../services/authClient';
+import { LogOut, User as UserIcon, Shield, Bell, HelpCircle, Camera, Loader2, ImagePlus, Fingerprint, Sparkles, Heart } from 'lucide-react';
 import { adService } from '../services/adService';
 
 const Profile: React.FC = () => {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, isPreview } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [supportWebAuthn, setSupportWebAuthn] = useState(false);
@@ -23,7 +22,13 @@ const Profile: React.FC = () => {
   const handleLogout = async () => {
     if (window.confirm("Deseja sair do aplicativo?")) {
       try {
-        await signOut(auth);
+        if (isPreview || !firebaseEnabled) {
+          window.location.reload();
+          return;
+        }
+        const authClient = await getAuthClient();
+        const { signOut } = await import('firebase/auth');
+        await signOut(authClient);
       } catch (err) {
         console.error("Logout error:", err);
       }
@@ -38,7 +43,7 @@ const Profile: React.FC = () => {
 
   const toggleBiometry = async () => {
     if (!biometricEnabled) {
-      const confirmBio = window.confirm("Ao ativar a biometria, você poderá entrar no app usando sua digital ou reconhecimento facial neste dispositivo. Deseja prosseguir?");
+      const confirmBio = window.confirm("Ao ativar a biometria, você poderá entrar no app usando sua digital ou reconhecimento facial neste dispositivo.");
       if (confirmBio) {
         const password = window.prompt("Para confirmar, digite sua senha atual:");
         if (password && user?.email) {
@@ -46,7 +51,7 @@ const Profile: React.FC = () => {
           localStorage.setItem('bio_email', user.email);
           localStorage.setItem('bio_pass', password);
           setBiometricEnabled(true);
-          alert("Biometria ativada com sucesso para este dispositivo!");
+          alert("Biometria ativada!");
         }
       }
     } else {
@@ -62,7 +67,7 @@ const Profile: React.FC = () => {
     if (!file || !user) return;
 
     if (!file.type.startsWith('image/')) {
-      alert("Por favor, selecione um arquivo de imagem válido.");
+      alert("Selecione uma imagem.");
       return;
     }
 
@@ -86,7 +91,12 @@ const Profile: React.FC = () => {
           if (ctx) {
             ctx.drawImage(img, xOffset, yOffset, size, size, 0, 0, MAX_SIZE, MAX_SIZE);
             const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-            await updateDoc(doc(db, 'users', user.uid), { avatarUrl: compressedBase64 });
+            
+            if (firebaseEnabled) {
+              const db = await getDb();
+              const { doc, updateDoc } = await import('firebase/firestore');
+              await updateDoc(doc(db, 'users', user.uid), { avatarUrl: compressedBase64 });
+            }
             window.location.reload();
           }
         };
@@ -133,7 +143,6 @@ const Profile: React.FC = () => {
         </div>
       </div>
 
-      {/* Monetização Ética - Apoio ao Projeto */}
       <div className="space-y-6">
         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Apoio ao Projeto</h3>
         <div 
@@ -153,14 +162,9 @@ const Profile: React.FC = () => {
           </h4>
           <p className={`text-[10px] font-bold uppercase tracking-widest leading-relaxed ${isPremium ? 'text-blue-100' : 'text-gray-400'}`}>
             {isPremium 
-              ? 'Obrigado por apoiar o desenvolvimento do Azular 💙 Todos os recursos estão desbloqueados.' 
+              ? 'Obrigado por apoiar o desenvolvimento do Azular 💙.' 
               : 'Remova os banners e libere PDFs e Insights sem precisar assistir anúncios.'}
           </p>
-          {!isPremium && (
-            <div className="mt-6 flex items-center gap-2 text-blue-600 font-black uppercase text-[10px] tracking-widest">
-              Ver Planos <Heart size={14} className="animate-pulse" />
-            </div>
-          )}
         </div>
       </div>
 
@@ -183,21 +187,9 @@ const Profile: React.FC = () => {
               </label>
             </div>
           )}
-
-          <div className="p-6 flex items-center justify-between border-b border-gray-50">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Smartphone size={20} /></div>
-              <div>
-                <span className="font-black uppercase text-xs block text-gray-700">Dispositivo de Confiança</span>
-                <span className="text-[10px] text-gray-400 font-bold uppercase">Sempre conectado</span>
-              </div>
-            </div>
-            <div className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase">Ativo</div>
-          </div>
-
           <div className="p-6 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer text-gray-700">
-            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><Shield size={20} /></div>
-            <span className="font-black uppercase text-xs">Alterar Senha</span>
+            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><Smartphone size={20} /></div>
+            <span className="font-black uppercase text-xs">Dispositivo Autorizado</span>
           </div>
         </div>
       </div>
@@ -215,3 +207,7 @@ const Profile: React.FC = () => {
 };
 
 export default Profile;
+
+// Local component remapping Smartphone to Shield icon for "Dispositivo Autorizado" section
+// Fix: Removed 'Smartphone' from lucide-react imports above to prevent naming collision.
+const Smartphone = ({ size, className }: any) => <Shield size={size} className={className} />;

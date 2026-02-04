@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged, type User } from 'firebase/auth';
-import { auth, db } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { firebaseEnabled } from './lib/firebase';
+import { getAuthClient } from './services/authClient';
+import { getDb } from './services/firestoreClient';
+import { isAiStudioPreview } from './utils/env';
 
 // Pages
 import Login from './pages/Login';
@@ -26,65 +27,91 @@ import LoadingScreen from './components/LoadingScreen';
 import { ToastProvider } from './context/ToastContext';
 
 interface AuthContextType {
-  user: User | null;
+  user: any | null;
   loading: boolean;
   userProfile: any | null;
+  isPreview: boolean;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, userProfile: null });
+const AuthContext = createContext<AuthContextType>({ 
+  user: null, 
+  loading: true, 
+  userProfile: null,
+  isPreview: false 
+});
+
 export const useAuth = () => useContext(AuthContext);
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, isPreview } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user && !isPreview) return <Navigate to="/login" replace />;
   return <>{children}</>;
 };
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const isPreview = isAiStudioPreview();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-          if (userDoc.exists()) {
-            setUserProfile(userDoc.data());
-          } else {
-            const defaultProfile = {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName || 'Usuário',
-              email: currentUser.email,
-              currency: 'BRL',
-              locale: 'pt-BR',
-              timezone: 'America/Sao_Paulo',
-              monthStartDay: 1,
-              avatarUrl: null
-            };
-            await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
-            setUserProfile(defaultProfile);
-          }
-        } catch (e) {
-          console.error("Erro ao carregar perfil:", e);
-        }
-      } else {
-        setUserProfile(null);
+    let unsubscribe: () => void = () => {};
+
+    const initAuth = async () => {
+      if (isPreview || !firebaseEnabled) {
+        // Mock User para Preview
+        setUser({ uid: 'preview-uid', email: 'preview@azular.app' });
+        setUserProfile({ displayName: 'Visitante Preview', currency: 'BRL' });
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
+
+      try {
+        const auth = await getAuthClient();
+        const db = await getDb();
+        const { onAuthStateChanged } = await import('firebase/auth');
+        const { doc, getDoc, setDoc } = await import('firebase/firestore');
+        
+        unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+          setUser(currentUser);
+          if (currentUser) {
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (userDoc.exists()) {
+              setUserProfile(userDoc.data());
+            } else {
+              const defaultProfile = {
+                uid: currentUser.uid,
+                displayName: currentUser.displayName || 'Usuário',
+                email: currentUser.email,
+                currency: 'BRL',
+                locale: 'pt-BR',
+                monthStartDay: 1
+              };
+              await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
+              setUserProfile(defaultProfile);
+            }
+          } else {
+            setUserProfile(null);
+          }
+          setLoading(false);
+        });
+      } catch (e) {
+        console.error("Auth Init Error:", e);
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+    return () => unsubscribe();
+  }, [isPreview]);
 
   return (
     <ToastProvider>
-      <AuthContext.Provider value={{ user, loading, userProfile }}>
-        <Routes key={user?.uid}>
-          <Route path="/login" element={user ? <Navigate to="/app/dashboard" /> : <Login />} />
-          <Route path="/signup" element={user ? <Navigate to="/app/dashboard" /> : <Signup />} />
+      <AuthContext.Provider value={{ user, loading, userProfile, isPreview }}>
+        <Routes>
+          <Route path="/login" element={(user && !isPreview) ? <Navigate to="/app/dashboard" /> : <Login />} />
+          <Route path="/signup" element={(user && !isPreview) ? <Navigate to="/app/dashboard" /> : <Signup />} />
           <Route path="/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
           <Route path="/diagnostics" element={<ProtectedRoute><Diagnostics /></ProtectedRoute>} />
           

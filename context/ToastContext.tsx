@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
+import { safeText } from '../utils/safeText';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -11,9 +12,9 @@ interface Toast {
 }
 
 interface ToastContextType {
-  notifySuccess: (msg: string) => void;
-  notifyError: (msg: string) => void;
-  notifyInfo: (msg: string) => void;
+  notifySuccess: (msg: any) => void;
+  notifyError: (msg: any) => void;
+  notifyInfo: (msg: any) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -25,15 +26,16 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addToast = useCallback((message: string, type: ToastType) => {
+  const addToast = useCallback((message: any, type: ToastType) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
+    // Garantimos que a mensagem armazenada seja sempre string
+    setToasts((prev) => [...prev, { id, message: safeText(message), type }]);
     setTimeout(() => removeToast(id), 4000);
   }, [removeToast]);
 
-  const notifySuccess = (msg: string) => addToast(msg, 'success');
-  const notifyError = (msg: string) => addToast(msg, 'error');
-  const notifyInfo = (msg: string) => addToast(msg, 'info');
+  const notifySuccess = (msg: any) => addToast(msg, 'success');
+  const notifyError = (msg: any) => addToast(msg, 'error');
+  const notifyInfo = (msg: any) => addToast(msg, 'info');
 
   return (
     <ToastContext.Provider value={{ notifySuccess, notifyError, notifyInfo }}>

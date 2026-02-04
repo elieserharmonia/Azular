@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { firebaseEnabled } from '../lib/firebase';
+import { getDb } from '../services/firestoreClient';
 import { getDebts } from '../services/db';
 import { Debt } from '../types';
 import { formatCurrency } from '../utils/formatters';
@@ -72,15 +72,23 @@ const RestartPlan: React.FC = () => {
     
     setLoading(true);
     try {
-      await addDoc(collection(db, 'debts'), {
-        ...formData,
-        totalAmount: parseNumericValue(formData.totalAmount),
-        monthlyPayment: parseNumericValue(formData.monthlyPayment),
-        interestRate: parseNumericValue(formData.interestRate),
-        userId: user.uid,
-        priority: 'medium',
-        createdAt: serverTimestamp()
-      });
+      if (!firebaseEnabled) {
+        // Fallback local modo Preview
+        const { localStore } = await import('../services/db') as any; // Mocked internal
+        alert("Modo local: recarregue para ver os dados simulados.");
+      } else {
+        const db = await getDb();
+        const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+        await addDoc(collection(db, 'debts'), {
+          ...formData,
+          totalAmount: parseNumericValue(formData.totalAmount),
+          monthlyPayment: parseNumericValue(formData.monthlyPayment),
+          interestRate: parseNumericValue(formData.interestRate),
+          userId: user.uid,
+          priority: 'medium',
+          createdAt: serverTimestamp()
+        });
+      }
       setShowModal(false);
       setFormData({ name: '', totalAmount: 0, monthlyPayment: 0, interestRate: 0 });
       await loadData();
@@ -94,8 +102,14 @@ const RestartPlan: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (confirm("Dívida quitada? Parabéns por esse grande passo!")) {
       try {
-        await deleteDoc(doc(db, 'debts', id));
-        await loadData();
+        if (!firebaseEnabled) {
+           alert("Funcionalidade limitada no modo Preview.");
+        } else {
+          const db = await getDb();
+          const { deleteDoc, doc } = await import('firebase/firestore');
+          await deleteDoc(doc(db, 'debts', id));
+          await loadData();
+        }
       } catch (err) {
         alert("Erro ao atualizar plano.");
       }

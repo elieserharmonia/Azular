@@ -1,5 +1,5 @@
 
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import React, { ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Copy, Trash2 } from "lucide-react";
 
 interface Props {
@@ -11,14 +11,27 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Explicitly extend React.Component with generic Props and State and add a constructor to ensure 'this.props' and 'this.state' are correctly inherited and recognized by the compiler.
+// Explicitly using React.Component with Props and State generics to ensure inheritance of state and props.
 class ErrorBoundary extends React.Component<Props, State> {
+  // Explicitly declaring state to ensure the compiler recognizes it as a member of the class.
+  public state: State = {
+    hasError: false,
+    error: null
+  };
+
+  // FIX: Explicitly declaring props to resolve "Property 'props' does not exist on type 'ErrorBoundary'" error.
+  // This ensures the TypeScript compiler correctly identifies the inherited props member in this execution context.
+  public props: Props;
+
   constructor(props: Props) {
     super(props);
+    // Initializing state in the constructor for class component standards and compatibility.
     this.state = {
       hasError: false,
       error: null
     };
+    // FIX: Assigning props locally to this.props for environment compatibility.
+    this.props = props;
   }
 
   public static getDerivedStateFromError(error: Error): State {
@@ -52,6 +65,7 @@ class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public render() {
+    // Correctly accessing state inherited from React.Component after explicit declaration.
     const { hasError } = this.state;
 
     if (hasError) {
@@ -95,7 +109,7 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fix: Accessing children through this.props is now valid because the class properly extends React.Component<Props, State>.
+    // Correctly accessing props inherited from React.Component.
     return this.props.children || null;
   }
 }

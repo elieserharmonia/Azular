@@ -15,7 +15,8 @@ import {
   Waves, Target, Calendar, Plus, RefreshCw, AlertCircle, X, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers, Clock, Loader2
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
-import { db } from '../firebase';
+// Obtain firestore instance using getDb from services
+import { getDb } from '../services/firestoreClient';
 import ChartShell from '../components/ChartShell';
 import SimpleBars from '../components/SimpleBars';
 import BannerAd from '../components/BannerAd';
@@ -193,6 +194,8 @@ const Provision: React.FC = () => {
     setIsProcessingPropagation(true);
 
     try {
+      // FIX: Accessing Firestore instance asynchronously to avoid initialization errors in preview environments
+      const db = await getDb();
       const batch = writeBatch(db);
       const cleanUpdates = {
         plannedAmount: parseNumericValue(formData.plannedAmount),
@@ -437,7 +440,7 @@ const Provision: React.FC = () => {
             {/* Modal Modesto de Propagação */}
             {showPropagationModal && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
-                <div className="w-full max-w-sm bg-white border-2 border-blue-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
+                <div className="w-full max-sm bg-white border-2 border-blue-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
                   <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
                     {isProcessingPropagation ? <Loader2 className="animate-spin" size={24} /> : <History size={24} />}
                   </div>

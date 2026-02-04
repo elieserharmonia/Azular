@@ -5,30 +5,20 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 
-// 1. CAPTURA GLOBAL IMEDIATA
-window.onerror = (message, source, lineno, colno, error) => {
-  const diag = {
-    type: 'runtime_error',
-    message: String(message),
-    source,
-    lineno,
-    colno,
-    stack: error?.stack,
-    time: new Date().toISOString()
-  };
-  localStorage.setItem('azular_boot_error', JSON.stringify(diag));
+// Captura imediata de erros antes de qualquer import pesado
+window.onerror = (msg, source, line, col, error) => {
+  const errStr = `Error: ${msg} at ${line}:${col}`;
+  (window as any).__AZULAR_BOOT_ERROR__ = errStr;
+  localStorage.setItem('azular_boot_error', errStr);
 };
 
 window.onunhandledrejection = (event) => {
-  const diag = {
-    type: 'unhandled_promise',
-    reason: String(event.reason),
-    time: new Date().toISOString()
-  };
-  localStorage.setItem('azular_boot_error', JSON.stringify(diag));
+  const errStr = `Promise Rejection: ${event.reason}`;
+  (window as any).__AZULAR_BOOT_ERROR__ = errStr;
+  localStorage.setItem('azular_boot_error', errStr);
 };
 
-const initApp = () => {
+const boot = () => {
   const rootElement = document.getElementById('root');
   if (!rootElement) return;
 
@@ -43,46 +33,21 @@ const initApp = () => {
         </ErrorBoundary>
       </React.StrictMode>
     );
-
-    // 2. SINALIZAÇÃO DE SUCESSO
-    (window as any).__AZULAR_BOOTED__ = true;
     
-    const loader = document.getElementById('boot-loader');
-    if (loader) {
-      setTimeout(() => {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-          if (loader.parentNode) loader.remove();
-        }, 500);
-      }, 300);
-    }
+    // Sinaliza sucesso para o watchdog do index.html
+    (window as any).__AZULAR_BOOT_OK__ = true;
+    console.log("Azular: React Boot OK");
 
   } catch (err) {
-    const diag = {
-      type: 'critical_mount_error',
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : '',
-      time: new Date().toISOString()
-    };
-    localStorage.setItem('azular_boot_error', JSON.stringify(diag));
-    console.error("Critical React Mount Error:", err);
+    const errStr = err instanceof Error ? err.message : String(err);
+    (window as any).__AZULAR_BOOT_ERROR__ = errStr;
     
-    rootElement.innerHTML = `<div style="padding: 40px; text-align: center; font-family: sans-serif;">
-      <h2 style="color: #ef4444;">Erro Crítico</h2>
-      <p>Não foi possível iniciar a interface.</p>
-      <button onclick="window.location.reload()" style="padding: 15px 30px; background: #2563eb; color: white; border: none; border-radius: 12px; font-weight: bold;">Tentar Novamente</button>
-    </div>`;
+    // Fallback visual imediato em caso de erro no render
+    const msgEl = document.getElementById('boot-msg');
+    if (msgEl) msgEl.textContent = 'Falha crítica no início do React.';
+    const btn = document.getElementById('boot-diag-btn');
+    if (btn) btn.style.display = 'block';
   }
 };
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
-} else {
-  initApp();
-}
-
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
-}
+boot();

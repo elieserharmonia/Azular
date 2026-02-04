@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Info, Cpu, Globe, AlertCircle, Copy, Trash2 } from 'lucide-react';
+import { ChevronLeft, Globe, AlertCircle, Copy, Trash2 } from 'lucide-react';
+import { safeText } from '../utils/safeText';
 
 const Diagnostics: React.FC = () => {
   const navigate = useNavigate();
@@ -55,15 +56,15 @@ const Diagnostics: React.FC = () => {
           <div className="space-y-2">
             <div className="flex justify-between text-[10px] font-bold uppercase">
               <span className="text-gray-400">Protocolo</span>
-              <span className="text-blue-600">{window.location.protocol}</span>
+              <span className="text-blue-600">{safeText(window.location.protocol)}</span>
             </div>
             <div className="flex justify-between text-[10px] font-bold uppercase">
               <span className="text-gray-400">Path Base</span>
-              <span className="text-blue-600">{window.location.pathname}</span>
+              <span className="text-blue-600">{safeText(window.location.pathname)}</span>
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">User Agent</span>
-              <span className="text-[9px] font-mono text-gray-600 break-all bg-gray-50 p-2 rounded-lg">{navigator.userAgent}</span>
+              <span className="text-[9px] font-mono text-gray-600 break-all bg-gray-50 p-2 rounded-lg">{safeText(navigator.userAgent)}</span>
             </div>
           </div>
         </div>
@@ -86,15 +87,15 @@ const Diagnostics: React.FC = () => {
             <div className="space-y-4">
               <div className="bg-red-50 p-4 rounded-2xl">
                 <p className="text-xs font-black text-red-700 uppercase mb-2">Mensagem</p>
-                <p className="text-[11px] font-bold text-red-600 leading-tight">{errorData.message}</p>
+                <p className="text-[11px] font-bold text-red-600 leading-tight">{safeText(errorData.message)}</p>
               </div>
               <div className="bg-gray-900 p-4 rounded-2xl overflow-hidden">
                 <p className="text-[8px] font-black text-gray-500 uppercase mb-2">Stack Trace</p>
                 <pre className="text-[9px] font-mono text-red-400 overflow-x-auto">
-                  {errorData.stack}
+                  {safeText(errorData.stack)}
                 </pre>
               </div>
-              <p className="text-[9px] text-gray-400 font-bold uppercase">Registrado em: {new Date(errorData.time).toLocaleString()}</p>
+              <p className="text-[9px] text-gray-400 font-bold uppercase">Registrado em: {safeText(new Date(errorData.time).toLocaleString())}</p>
             </div>
           ) : (
             <div className="py-8 text-center text-gray-300 font-black uppercase text-[10px] tracking-widest">

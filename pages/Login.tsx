@@ -1,10 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
-import { auth } from '../firebase';
+import { getAuthClient } from '../services/authClient';
+import { useAuth } from '../App';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Fingerprint, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Fingerprint, Sparkles, AlertCircle } from 'lucide-react';
 import BrandLogo from '../components/BrandLogo';
+
+/**
+ * ⚠️ IMPORTANTE: Auth é lazy por causa do Google AI Studio preview.
+ * Não mover getAuth ou signInWithEmailAndPassword para imports de topo.
+ */
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -15,6 +20,7 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const navigate = useNavigate();
+  const { isPreview } = useAuth();
 
   useEffect(() => {
     if (window.PublicKeyCredential) {
@@ -27,37 +33,25 @@ const Login: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+
+    if (isPreview) {
+      setTimeout(() => navigate('/app/dashboard'), 500);
+      return;
+    }
+
     try {
+      const auth = await getAuthClient();
+      const { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } = await import('firebase/auth');
+      
       await setPersistence(auth, trustDevice ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       navigate('/app/dashboard');
     } catch (err: any) {
-      setError('E-mail ou senha não conferem. Vamos tentar de novo?');
-      setLoading(false);
-    }
-  };
-
-  const handleBiometricLogin = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      if (window.confirm("Use sua digital ou reconhecimento facial para entrar no Azular.")) {
-        const savedEmail = localStorage.getItem('bio_email');
-        const savedPass = localStorage.getItem('bio_pass');
-        
-        if (savedEmail && savedPass) {
-          await setPersistence(auth, browserLocalPersistence);
-          await signInWithEmailAndPassword(auth, savedEmail, savedPass);
-          navigate('/app/dashboard');
-        } else {
-          setError('Biometria expirada. Entre com sua senha uma vez para reativar.');
-          setLoading(false);
-        }
+      if (err.message === "AUTH_DISABLED_IN_PREVIEW") {
+        setError("Modo preview: login desativado. Use a versão Vercel.");
       } else {
-        setLoading(false);
+        setError('E-mail ou senha não conferem.');
       }
-    } catch (err) {
-      setError('A biometria falhou. Use sua senha desta vez.');
       setLoading(false);
     }
   };
@@ -82,80 +76,58 @@ const Login: React.FC = () => {
 
       <div className="md:w-1/2 flex items-center justify-center p-8 bg-white">
         <div className="max-w-md w-full">
-          <h2 className="text-2xl font-black text-gray-900 mb-2 uppercase tracking-tighter">Bem-vindo(a) de volta</h2>
+          {isPreview && (
+            <div className="mb-8 p-4 bg-amber-50 border-2 border-amber-100 rounded-3xl flex items-start gap-3">
+              <AlertCircle className="text-amber-500 shrink-0 mt-0.5" size={18} />
+              <div>
+                <p className="text-[10px] font-black uppercase text-amber-800 tracking-widest">Ambiente de Preview</p>
+                <p className="text-[11px] font-bold text-amber-600 leading-tight mt-1">
+                  Firebase Auth desativado nesta sandbox. Clique em entrar para testar.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <h2 className="text-2xl font-black text-gray-900 mb-2 uppercase tracking-tighter">Bem-vindo(a)</h2>
           <p className="text-gray-400 font-bold text-sm mb-10 uppercase tracking-widest">Acesse sua jornada Azular</p>
 
           {error && (
-            <div className="bg-red-50 text-red-600 p-5 rounded-3xl text-sm mb-8 font-bold border-2 border-red-100 animate-in fade-in zoom-in duration-300">
+            <div className="bg-red-50 text-red-600 p-5 rounded-3xl text-sm mb-8 font-bold border-2 border-red-100">
               {error}
             </div>
           )}
 
           <form onSubmit={handleLogin} className="space-y-8">
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-[0.2em]">Seu E-mail</label>
+              <label className="block text-[10px] font-black text-gray-400 uppercase mb-2">E-mail</label>
               <input 
                 required
                 type="email" 
-                className="w-full border-b-4 border-blue-50 py-4 text-lg font-black outline-none focus:border-blue-600 transition-all placeholder:text-gray-200"
+                className="w-full border-b-4 border-blue-50 py-4 text-lg font-black outline-none focus:border-blue-600 transition-all"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nome@exemplo.com"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-[0.2em]">Sua Senha</label>
+              <label className="block text-[10px] font-black text-gray-400 uppercase mb-2">Senha</label>
               <div className="relative">
                 <input 
                   required
                   type={showPassword ? "text" : "password"} 
-                  className="w-full border-b-4 border-blue-50 py-4 pr-10 text-lg font-black outline-none focus:border-blue-600 transition-all placeholder:text-gray-200"
+                  className="w-full border-b-4 border-blue-50 py-4 text-lg font-black outline-none focus:border-blue-600 transition-all"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
                 />
-                <button 
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 transition-colors p-3"
-                >
-                  {showPassword ? <EyeOff size={22} /> : <Eye size={22} />}
-                </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 py-2">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  className="sr-only peer" 
-                  checked={trustDevice} 
-                  onChange={(e) => setTrustDevice(e.target.checked)} 
-                />
-                <div className="w-11 h-6 bg-gray-100 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Confiar neste dispositivo</span>
-            </div>
-
-            <div className="flex flex-col gap-4 pt-4">
-              <button 
-                disabled={loading}
-                type="submit" 
-                className="w-full bg-blue-600 text-white font-black py-6 rounded-[2.5rem] shadow-xl hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 uppercase tracking-widest text-sm"
-              >
-                {loading ? 'Acessando Lar...' : 'Entrar no Azular'}
-              </button>
-
-              {biometricAvailable && (
-                <button 
-                  type="button"
-                  onClick={handleBiometricLogin}
-                  className="w-full bg-white border-2 border-blue-600 text-blue-600 font-black py-6 rounded-[2.5rem] shadow-sm hover:bg-blue-50 transition-all active:scale-95 flex items-center justify-center gap-3 uppercase tracking-widest text-sm"
-                >
-                  <Fingerprint size={24} /> Usar Biometria
-                </button>
-              )}
-            </div>
+            <button 
+              disabled={loading}
+              type="submit" 
+              className="w-full bg-blue-600 text-white font-black py-6 rounded-[2.5rem] shadow-xl uppercase tracking-widest text-sm"
+            >
+              {loading ? 'Acessando...' : 'Entrar no Azular'}
+            </button>
           </form>
           
           <div className="mt-12 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">

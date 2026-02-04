@@ -13,11 +13,11 @@ import {
   ChevronRight,
   LayoutDashboard,
   User as UserIcon,
-  Waves,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Download
+  Download,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../App';
 import PWAStatus from './PWAStatus';
@@ -29,7 +29,7 @@ const Layout: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   
-  const { userProfile } = useAuth();
+  const { userProfile, isPreview } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -89,6 +89,16 @@ const Layout: React.FC = () => {
     <div className={`flex flex-col min-h-screen bg-[#F8FAFF] pb-24 md:pb-0 transition-all duration-300 ${isDesktopVisible ? 'md:pl-72' : 'md:pl-0'}`}>
       
       <PWAStatus />
+
+      {/* Banner Modo Preview */}
+      {isPreview && (
+        <div className="bg-amber-100 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 z-[60] sticky top-0 md:relative">
+          <AlertCircle size={14} className="text-amber-600" />
+          <span className="text-[10px] font-black uppercase text-amber-800 tracking-widest text-center">
+            Modo Preview: Recursos de nuvem limitados. Use a versão publicada para testar sincronização.
+          </span>
+        </div>
+      )}
 
       {/* Botão de Instalação Mobile/Desktop */}
       {showInstallBtn && (

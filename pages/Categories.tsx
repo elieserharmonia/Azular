@@ -2,10 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { getCategories } from '../services/db';
+import { getDb } from '../services/firestoreClient';
+import { firebaseEnabled } from '../lib/firebase';
 import { Category } from '../types';
 import { Plus, Trash2, Tags, X } from 'lucide-react';
-import { collection, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
 
 const CategoriesPage: React.FC = () => {
   const { user } = useAuth();
@@ -39,22 +39,26 @@ const CategoriesPage: React.FC = () => {
     
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'categories'), {
-        ...formData,
-        userId: user!.uid,
-        createdAt: serverTimestamp()
-      });
+      if (!firebaseEnabled) {
+        // Fallback para modo Preview já tratado em getCategories/db.ts
+        const { createCategory } = await import('../services/db');
+        await createCategory(user.uid, formData.name, formData.direction);
+      } else {
+        const db = await getDb();
+        const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+        await addDoc(collection(db, 'categories'), {
+          ...formData,
+          userId: user!.uid,
+          createdAt: serverTimestamp()
+        });
+      }
       
       setFormData({ name: '', direction: 'debit' });
       setShowModal(false);
       load();
     } catch (err: any) {
       console.error("createCategory error:", err);
-      if (err.code === 'permission-denied') {
-        alert("Sem permissão para salvar. Verifique login e regras do Firestore.");
-      } else {
-        alert("Erro ao salvar categoria: " + err.message);
-      }
+      alert("Erro ao salvar categoria: " + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -63,10 +67,17 @@ const CategoriesPage: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm("Deseja excluir esta categoria?")) {
       try {
-        await deleteDoc(doc(db, 'categories', id));
-        load();
+        if (!firebaseEnabled) {
+          // Implementação local rápida se necessário, ou via db.ts
+          alert("Exclusão não disponível em modo local simplificado nesta tela.");
+        } else {
+          const db = await getDb();
+          const { deleteDoc, doc } = await import('firebase/firestore');
+          await deleteDoc(doc(db, 'categories', id));
+          load();
+        }
       } catch (err) {
-        alert("Erro ao excluir. Verifique permissões.");
+        alert("Erro ao excluir.");
       }
     }
   };

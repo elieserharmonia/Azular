@@ -2,12 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { getAccounts } from '../services/db';
+import { getDb } from '../services/firestoreClient';
+import { firebaseEnabled } from '../lib/firebase';
 import { Account } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { Plus, Wallet, CreditCard, TrendingUp, X } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
 
 const Accounts: React.FC = () => {
   const { user } = useAuth();
@@ -38,14 +38,22 @@ const Accounts: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addDoc(collection(db, 'accounts'), {
-      ...formData,
-      initialBalance: parseNumericValue(formData.initialBalance),
-      creditLimit: parseNumericValue(formData.creditLimit),
-      userId: user!.uid,
-      active: true,
-      createdAt: serverTimestamp()
-    });
+    if (!user) return;
+
+    if (!firebaseEnabled) {
+      alert("Criação de contas limitada no modo Preview.");
+    } else {
+      const db = await getDb();
+      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+      await addDoc(collection(db, 'accounts'), {
+        ...formData,
+        initialBalance: parseNumericValue(formData.initialBalance),
+        creditLimit: parseNumericValue(formData.creditLimit),
+        userId: user!.uid,
+        active: true,
+        createdAt: serverTimestamp()
+      });
+    }
     setShowModal(false);
     load();
   };

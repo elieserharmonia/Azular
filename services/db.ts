@@ -1,25 +1,39 @@
 
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  serverTimestamp
-} from 'firebase/firestore';
-import { db } from '../firebase';
+// src/services/db.ts
+import { firebaseEnabled } from '../lib/firebase';
+import { getDb } from './firestoreClient';
 import { Transaction, Account, Category, Goal, Debt } from '../types';
 
+// Motor de persistência local para Modo Demo (AI Studio Preview)
+const demoStore = {
+  get: (key: string) => {
+    const data = localStorage.getItem(`azular_demo_${key}`);
+    return data ? JSON.parse(data) : [];
+  },
+  set: (key: string, data: any[]) => {
+    localStorage.setItem(`azular_demo_${key}`, JSON.stringify(data));
+  },
+  add: (key: string, item: any) => {
+    const data = demoStore.get(key);
+    const newItem = { ...item, id: Math.random().toString(36).substr(2, 9), createdAt: new Date().toISOString() };
+    demoStore.set(key, [...data, newItem]);
+    return newItem;
+  }
+};
+
 export const getTransactions = async (userId: string, competenceMonth?: string) => {
-  if (!userId) return [];
-  const coll = collection(db, 'transactions');
-  const q = query(coll, where('userId', '==', userId));
-  
+  if (!firebaseEnabled) {
+    let docs = demoStore.get('transactions') as Transaction[];
+    if (competenceMonth) docs = docs.filter(t => t.competenceMonth === competenceMonth);
+    return docs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
   try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = await import('firebase/firestore');
+    const q = query(collection(db, 'transactions'), where('userId', '==', userId));
     const snap = await getDocs(q);
+    
     let docs = snap.docs.map(doc => {
       const data = doc.data();
       return { 
@@ -32,114 +46,91 @@ export const getTransactions = async (userId: string, competenceMonth?: string) 
     if (competenceMonth) {
       docs = docs.filter(t => t.competenceMonth === competenceMonth);
     }
-
-    return docs.sort((a, b) => {
-      const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
-      const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
-      return dateB - dateA;
-    });
-  } catch (error: any) {
-    console.error("getTransactions error:", error);
-    throw error;
-  }
-};
-
-export const getDebts = async (userId: string) => {
-  if (!userId) return [];
-  try {
-    const q = query(collection(db, 'debts'), where('userId', '==', userId));
-    const snap = await getDocs(q);
-    const docs = snap.docs.map(d => {
-      const data = d.data();
-      return { 
-        id: d.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate?.() || new Date(0)
-      } as Debt;
-    });
-
-    return docs.sort((a, b) => {
-      const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
-      const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
-      return dateB - dateA;
-    });
-  } catch (error: any) {
-    console.error("getDebts error:", error);
-    throw error;
+    return docs.sort((a, b) => (b.createdAt as any).getTime() - (a.createdAt as any).getTime());
+  } catch (error) {
+    return [];
   }
 };
 
 export const getAccounts = async (userId: string) => {
-  if (!userId) return [];
-  const coll = collection(db, 'accounts');
-  const q = query(coll, where('userId', '==', userId));
-  
+  if (!firebaseEnabled) {
+    const accs = demoStore.get('accounts');
+    return accs.length ? accs : [{ id: 'demo-acc', name: 'Conta Demo', initialBalance: 1000, kind: 'checking', active: true }];
+  }
   try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = await import('firebase/firestore');
+    const q = query(collection(db, 'accounts'), where('userId', '==', userId));
     const snap = await getDocs(q);
-    const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account));
-    return docs.filter(acc => acc.active !== false);
-  } catch (error: any) {
-    console.error("getAccounts error:", error);
-    throw error;
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account)).filter(acc => acc.active !== false);
+  } catch (error) {
+    return [];
   }
 };
 
 export const getCategories = async (userId: string) => {
-  if (!userId) return [];
-  const coll = collection(db, 'categories');
-  const q = query(coll, where('userId', '==', userId));
+  if (!firebaseEnabled) {
+    const cats = demoStore.get('categories');
+    return cats.length ? cats : [
+      { id: 'c1', name: 'Alimentação', direction: 'debit' },
+      { id: 'c2', name: 'Salário', direction: 'credit' }
+    ];
+  }
   try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = await import('firebase/firestore');
+    const q = query(collection(db, 'categories'), where('userId', '==', userId));
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
   } catch (error) {
-    console.error("getCategories error:", error);
     return [];
   }
 };
 
 export const createCategory = async (userId: string, name: string, direction: 'credit' | 'debit' | 'both') => {
-  if (!userId) throw new Error("userId é obrigatório.");
-  const docRef = await addDoc(collection(db, 'categories'), {
-    userId,
-    name,
-    direction,
-    createdAt: serverTimestamp()
-  });
+  if (!firebaseEnabled) {
+    return demoStore.add('categories', { userId, name, direction }).id;
+  }
+  const db = await getDb();
+  const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+  const docRef = await addDoc(collection(db, 'categories'), { userId, name, direction, createdAt: serverTimestamp() });
   return docRef.id;
 };
 
-export const getGoals = async (userId: string) => {
-  if (!userId) return [];
-  const coll = collection(db, 'goals');
-  const q = query(coll, where('userId', '==', userId));
-  try {
-    const snap = await getDocs(q);
-    const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Goal));
-    return docs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-  } catch (error) {
-    console.error("getGoals error:", error);
-    return [];
-  }
-};
-
 export const addTransaction = async (data: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => {
-  if (!data.userId) throw new Error("userId é obrigatório.");
-  return addDoc(collection(db, 'transactions'), {
-    ...data,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
+  if (!firebaseEnabled) return demoStore.add('transactions', data);
+  const db = await getDb();
+  const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+  return addDoc(collection(db, 'transactions'), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
 };
 
 export const updateTransaction = async (id: string, data: Partial<Transaction>) => {
+  if (!firebaseEnabled) {
+    const docs = demoStore.get('transactions');
+    const idx = docs.findIndex((d: any) => d.id === id);
+    if (idx !== -1) {
+      docs[idx] = { ...docs[idx], ...data, updatedAt: new Date().toISOString() };
+      demoStore.set('transactions', docs);
+    }
+    return;
+  }
+  const db = await getDb();
+  const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
   const ref = doc(db, 'transactions', id);
   const { id: _, ...cleanData } = data as any;
-  return updateDoc(ref, {
-    ...cleanData,
-    updatedAt: serverTimestamp()
-  });
+  return updateDoc(ref, { ...cleanData, updatedAt: serverTimestamp() });
 };
 
 export const deleteTransaction = async (id: string) => {
+  if (!firebaseEnabled) {
+    const docs = demoStore.get('transactions');
+    demoStore.set('transactions', docs.filter((d: any) => d.id !== id));
+    return;
+  }
+  const db = await getDb();
+  const { doc, deleteDoc } = await import('firebase/firestore');
   return deleteDoc(doc(db, 'transactions', id));
 };
+
+export const getDebts = async (userId: string) => !firebaseEnabled ? demoStore.get('debts') : [];
+export const getGoals = async (userId: string) => !firebaseEnabled ? demoStore.get('goals') : [];

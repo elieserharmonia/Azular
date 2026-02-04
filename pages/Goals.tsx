@@ -2,12 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { getGoals, getAccounts, getCategories } from '../services/db';
+import { getDb } from '../services/firestoreClient';
+import { firebaseEnabled } from '../lib/firebase';
 import { Goal, Account, Category } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { Target, Plus, TrendingUp } from 'lucide-react';
-import { collection, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
 
 const Goals: React.FC = () => {
   const { user } = useAuth();
@@ -34,8 +34,7 @@ const Goals: React.FC = () => {
   });
 
   useEffect(() => {
-    if (!user) return;
-    loadData();
+    if (user) loadData();
   }, [user]);
 
   const loadData = async () => {
@@ -59,14 +58,21 @@ const Goals: React.FC = () => {
   const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    await addDoc(collection(db, 'goals'), {
-      ...goalForm,
-      targetAmount: parseNumericValue(goalForm.targetAmount),
-      userId: user.uid,
-      currentAmount: 0,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
+
+    if (!firebaseEnabled) {
+      alert("Criação de sonhos limitada no modo Preview.");
+    } else {
+      const db = await getDb();
+      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+      await addDoc(collection(db, 'goals'), {
+        ...goalForm,
+        targetAmount: parseNumericValue(goalForm.targetAmount),
+        userId: user.uid,
+        currentAmount: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    }
     setShowGoalModal(false);
     loadData();
   };
@@ -77,38 +83,45 @@ const Goals: React.FC = () => {
     if (!user || !selectedGoal || amountNum <= 0) return;
     
     try {
-      await addDoc(collection(db, 'goalContributions'), {
-        userId: user.uid,
-        goalId: selectedGoal.id,
-        accountId: aporteForm.accountId,
-        amount: amountNum,
-        date: aporteForm.date,
-        createdAt: serverTimestamp()
-      });
+      if (!firebaseEnabled) {
+        alert("Aportes indisponíveis no modo Preview.");
+      } else {
+        const db = await getDb();
+        const { collection, addDoc, serverTimestamp, updateDoc, doc } = await import('firebase/firestore');
+        
+        await addDoc(collection(db, 'goalContributions'), {
+          userId: user.uid,
+          goalId: selectedGoal.id,
+          accountId: aporteForm.accountId,
+          amount: amountNum,
+          date: aporteForm.date,
+          createdAt: serverTimestamp()
+        });
 
-      const newAmount = (parseNumericValue(selectedGoal.currentAmount) || 0) + amountNum;
-      await updateDoc(doc(db, 'goals', selectedGoal.id!), {
-        currentAmount: newAmount,
-        updatedAt: serverTimestamp()
-      });
+        const newAmount = (parseNumericValue(selectedGoal.currentAmount) || 0) + amountNum;
+        await updateDoc(doc(db, 'goals', selectedGoal.id!), {
+          currentAmount: newAmount,
+          updatedAt: serverTimestamp()
+        });
 
-      const aporteCategory = categories.find(c => c.name.toLowerCase().includes('sonho') || c.name.toLowerCase().includes('aporte'));
-      await addDoc(collection(db, 'transactions'), {
-        userId: user.uid,
-        accountId: aporteForm.accountId,
-        categoryId: aporteCategory?.id || '',
-        type: 'debit',
-        description: `Aporte: ${selectedGoal.name}`,
-        amount: amountNum,
-        plannedAmount: amountNum,
-        competenceMonth: aporteForm.date.substring(0, 7),
-        dueDate: aporteForm.date,
-        status: 'done',
-        isFixed: false,
-        recurrence: { enabled: false, pattern: 'none' },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+        const aporteCategory = categories.find(c => c.name.toLowerCase().includes('sonho') || c.name.toLowerCase().includes('aporte'));
+        await addDoc(collection(db, 'transactions'), {
+          userId: user.uid,
+          accountId: aporteForm.accountId,
+          categoryId: aporteCategory?.id || '',
+          type: 'debit',
+          description: `Aporte: ${selectedGoal.name}`,
+          amount: amountNum,
+          plannedAmount: amountNum,
+          competenceMonth: aporteForm.date.substring(0, 7),
+          dueDate: aporteForm.date,
+          status: 'done',
+          isFixed: false,
+          recurrence: { enabled: false, pattern: 'none' },
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
 
       setShowAporteModal(false);
       loadData();

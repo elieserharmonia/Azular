@@ -10,7 +10,8 @@ import { getPreviousMonth } from '../utils/date';
 import { useToast } from '../context/ToastContext';
 import { Plus, Search, CheckCircle, Clock, X, RefreshCw, AlertCircle, Edit3, Trash2, ArrowRight, History, Loader2 } from 'lucide-react';
 import { serverTimestamp, collection, query, where, getDocs, doc, writeBatch } from 'firebase/firestore';
-import { db } from '../firebase';
+// Obtain firestore instance using getDb from services
+import { getDb } from '../services/firestoreClient';
 import CategorySelect from '../components/CategorySelect';
 
 const INITIAL_FORM_STATE = (): Partial<Transaction> => {
@@ -141,6 +142,8 @@ const Transactions: React.FC = () => {
     setIsProcessingPropagation(true);
 
     try {
+      // FIX: Accessing Firestore instance asynchronously to avoid initialization errors in preview environments
+      const db = await getDb();
       const batch = writeBatch(db);
       const updates = {
         amount: parseNumericValue(formData.amount),

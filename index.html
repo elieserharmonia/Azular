@@ -5,155 +5,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Azular — Cuidar do dinheiro começa em casa</title>
-    
-    <!-- PWA Meta Tags -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#2563EB">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Azular">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/9431/9431057.png">
-    
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFF;
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden;
-        }
-        #boot-loader {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            width: 100vw;
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: 9999;
-            background: #F8FAFF;
-            transition: opacity 0.5s ease;
-        }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #E6F0FA;
-            border-top: 4px solid #2563EB;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        #boot-error {
-            display: none;
-            padding: 2rem;
-            text-align: center;
-            animation: fadeIn 0.5s ease;
-        }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        .error-card {
-            background: #fff;
-            padding: 2.5rem;
-            border-radius: 2.5rem;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.1);
-            border: 2px solid #FEE2E2;
-            max-width: 340px;
-            margin: auto;
-        }
+        body { font-family: 'Inter', sans-serif; background: #F8FAFF; margin: 0; }
+        .boot-btn { padding: 12px 20px; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; font-weight: bold; cursor: pointer; margin-top: 10px; display: none; }
+        .diag-box { display: none; background: #1e293b; color: #94a3b8; padding: 15px; border-radius: 12px; margin-top: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; text-align: left; max-width: 100%; overflow-x: auto; }
     </style>
-    
     <script>
-        // Shim para process.env exigido por algumas bibliotecas em ambiente de navegador
         window.process = { env: { NODE_ENV: 'production' } };
-
-        window.onerror = function(msg, url, line, col, error) {
-            const diag = {
-                message: msg,
-                url: url,
-                line: line,
-                time: new Date().toISOString(),
-                ua: navigator.userAgent
-            };
-            localStorage.setItem('azular_boot_error', JSON.stringify(diag));
-            console.error("Boot Error Detected:", diag);
-        };
+        window.__AZULAR_BOOT_OK__ = false;
+        window.__AZULAR_BOOT_ERROR__ = null;
     </script>
-<script type="importmap">
+    <script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
-    "firebase/app": "https://esm.sh/firebase@^10.8.0/app",
-    "firebase/auth": "https://esm.sh/firebase@^10.8.0/auth",
-    "firebase/firestore": "https://esm.sh/firebase@^10.8.0/firestore",
-    "firebase/analytics": "https://esm.sh/firebase@^10.8.0/analytics",
-    "lucide-react": "https://esm.sh/lucide-react@^0.475.0",
-    "recharts": "https://esm.sh/recharts@^2.12.1",
-    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
     "react/": "https://esm.sh/react@^19.2.4/",
-    "firebase/": "https://esm.sh/firebase@^12.8.0/",
+    "react": "https://esm.sh/react@^19.2.4",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "firebase/": "https://esm.sh/firebase@^12.8.0/",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
     "vite": "https://esm.sh/vite@^7.3.1",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
     "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.2"
   }
 }
 </script>
 </head>
-<body class="text-gray-900">
+<body>
     <div id="root">
-        <div id="boot-loader">
-            <div id="loading-state">
-                <div class="spinner"></div>
-                <p style="margin-top: 1.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; color: #2563EB; text-align: center;">Azulando seu lar...</p>
-            </div>
+        <div id="boot-ui" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px;">
+            <div id="boot-spinner" style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+            <h1 style="font-weight: 900; font-size: 24px; color: #1e293b; margin: 0;">AZULAR</h1>
+            <p id="boot-msg" style="color: #64748b; font-weight: 500; margin-top: 10px;">Iniciando sistema...</p>
             
-            <div id="boot-error">
-                <div class="error-card">
-                    <h1 style="font-weight: 900; font-size: 22px; text-transform: uppercase; color: #111827; margin-bottom: 0.5rem; letter-spacing: -0.02em;">Ops! Falha no Início</h1>
-                    <p style="font-size: 14px; color: #6B7280; margin-bottom: 2rem; line-height: 1.5;">O Azular não conseguiu carregar no seu dispositivo.</p>
-                    
-                    <button onclick="window.location.reload()" style="background: #2563EB; color: #fff; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; margin-bottom: 0.8rem; border: none; cursor: pointer; font-size: 12px; letter-spacing: 0.05em; box-shadow: 0 10px 15px -3px rgba(37,99,235,0.3);">Recarregar</button>
-                    
-                    <button id="show-diag" onclick="alert(localStorage.getItem('azular_boot_error') || 'Nenhum log detalhado disponível.')" style="background: #F3F4F6; color: #4B5563; width: 100%; padding: 1.2rem; border-radius: 1.2rem; font-weight: 900; text-transform: uppercase; font-size: 10px; border: none; cursor: pointer; letter-spacing: 0.05em; margin-bottom: 0.8rem;">Ver Diagnóstico</button>
-
-                    <button onclick="clearCacheAndReload()" style="background: transparent; color: #9CA3AF; width: 100%; padding: 0.5rem; font-weight: 700; text-transform: uppercase; font-size: 9px; border: none; cursor: pointer; letter-spacing: 0.05em;">Limpar Cache e Resetar</button>
-                </div>
-            </div>
+            <button id="boot-diag-btn" class="boot-btn">Ver Diagnóstico</button>
+            <div id="boot-diag-box" class="diag-box"></div>
         </div>
     </div>
 
-    <script type="module" src="/index.tsx"></script>
+    <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
 
     <script>
-        window.__AZULAR_BOOTED__ = false;
-        
-        // WATCHDOG: Se em 8 segundos o React não setar __AZULAR_BOOTED__, mostra erro.
+        // Watchdog para detectar falha no boot (timeout de 5 segundos)
         setTimeout(() => {
-            if (!window.__AZULAR_BOOTED__) {
-                const loadingState = document.getElementById('loading-state');
-                const bootError = document.getElementById('boot-error');
-                if (loadingState) loadingState.style.display = 'none';
-                if (bootError) bootError.style.display = 'block';
-            }
-        }, 8000);
+            if (!window.__AZULAR_BOOT_OK__) {
+                const msg = document.getElementById('boot-msg');
+                const btn = document.getElementById('boot-diag-btn');
+                const spinner = document.getElementById('boot-spinner');
+                
+                if (msg) msg.textContent = 'O carregamento está demorando mais que o esperado.';
+                if (spinner) spinner.style.borderColor = '#ef4444';
+                if (btn) btn.style.display = 'block';
 
-        function clearCacheAndReload() {
-            localStorage.clear();
-            sessionStorage.clear();
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(regs => {
-                    for(let reg of regs) reg.unregister();
-                });
+                btn.onclick = () => {
+                    const box = document.getElementById('boot-diag-box');
+                    box.style.display = 'block';
+                    box.textContent = JSON.stringify({
+                        url: location.href,
+                        online: navigator.onLine,
+                        ua: navigator.userAgent,
+                        boot_error: window.__AZULAR_BOOT_ERROR__,
+                        local_error: localStorage.getItem('azular_boot_error')
+                    }, null, 2);
+                };
             }
-            window.location.reload(true);
-        }
+        }, 5000);
     </script>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
