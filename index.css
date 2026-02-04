@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Estilos personalizados para o Azular */
 :root {
   --azular-blue: #2563EB;
 }
@@ -10,6 +9,11 @@
 body {
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
+  @apply bg-[#F8FAFF] transition-colors duration-300;
+}
+
+body.dark {
+  @apply bg-[#0f172a] text-slate-100;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -25,12 +29,23 @@ body {
   width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  @apply bg-transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(37, 99, 235, 0.2);
   border-radius: 10px;
 }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.6);
+  @apply bg-blue-400;
+}
+
+.glass-morphism {
+  @apply bg-white/80 backdrop-blur-md border border-white/20 dark:bg-slate-800/80 dark:border-slate-700/30;
+}
+
+.bank-gradient {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
 }

@@ -1,6 +1,6 @@
-
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./*.{js,ts,jsx,tsx}",
@@ -21,6 +21,13 @@ export default {
         '4xl': '2rem',
         '5xl': '2.5rem',
         '6xl': '3rem',
+      },
+      colors: {
+        azular: {
+          light: '#60A5FA',
+          DEFAULT: '#2563EB',
+          dark: '#1D4ED8',
+        }
       }
     },
   },
