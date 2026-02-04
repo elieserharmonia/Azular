@@ -8,7 +8,6 @@ import { Debt } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { HeartPulse, Plus, X, ArrowRight, ShieldCheck, Sparkles, Trash2, Info, RefreshCw } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 
 const RestartPlan: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
@@ -16,7 +15,6 @@ const RestartPlan: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [strategy, setStrategy] = useState<'snowball' | 'avalanche'>('snowball');
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [extraPayment, setExtraPayment] = useState(0);
 
   const [formData, setFormData] = useState({
@@ -41,28 +39,10 @@ const RestartPlan: React.FC = () => {
     try {
       const list = await getDebts(user.uid);
       setDebts(list);
-      if (list.length > 0) {
-        generateAiInsight(list);
-      }
     } catch (err: any) {
       console.error(err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const generateAiInsight = async (debtList: Debt[]) => {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const total = debtList.reduce((acc, d) => acc + parseNumericValue(d.totalAmount), 0);
-      const prompt = `Você é o guia Azular. O usuário tem ${debtList.length} dívidas totalizando ${formatCurrency(total)}. Dê uma mensagem humana e acolhedora (máx 15 palavras) focada em recomeço.`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
-      setAiInsight(response.text);
-    } catch (e) {
-      setAiInsight("Um passo de cada vez. Recomeçar faz parte da jornada financeira.");
     }
   };
 
@@ -73,8 +53,6 @@ const RestartPlan: React.FC = () => {
     setLoading(true);
     try {
       if (!firebaseEnabled) {
-        // Fallback local modo Preview
-        const { localStore } = await import('../services/db') as any; // Mocked internal
         alert("Modo local: recarregue para ver os dados simulados.");
       } else {
         const db = await getDb();
@@ -156,12 +134,12 @@ const RestartPlan: React.FC = () => {
         </button>
       </header>
 
-      {aiInsight && (
+      {debts.length > 0 && (
         <div className="bg-white p-8 rounded-[2.5rem] text-blue-900 border-2 border-blue-50 shadow-sm flex items-start gap-5 animate-in fade-in slide-in-from-left duration-700 relative overflow-hidden">
           <div className="bg-blue-600/10 p-3 rounded-2xl shrink-0">
             <Sparkles className="text-blue-600" size={28} />
           </div>
-          <p className="text-xl font-bold leading-tight italic opacity-80">"{aiInsight}"</p>
+          <p className="text-xl font-bold leading-tight italic opacity-80">"Um passo de cada vez. Recomeçar faz parte da jornada financeira de quem cresce."</p>
         </div>
       )}
 

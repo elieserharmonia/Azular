@@ -3,15 +3,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { getTransactions, getAccounts } from '../services/db';
 import { Transaction, Account } from '../types';
-import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatters';
+import { formatCurrency, getMonthName } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   LineChart, Line
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Sparkles, Waves, Eye, EyeOff } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Sparkles, Waves, Eye, EyeOff, Info } from 'lucide-react';
 import ChartBox from '../components/ChartBox';
+import { getAiInsights, AiInsight } from '../services/aiInsights';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -20,7 +20,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'both' | 'planned' | 'done'>('both');
   const [period, setPeriod] = useState<number>(6);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [insights, setInsights] = useState<AiInsight[]>([]);
   
   // Controle de exibição do saldo no card de contas
   const [showAccountsBalance, setShowAccountsBalance] = useState(false);
@@ -39,14 +39,17 @@ const Dashboard: React.FC = () => {
     if (!user) return;
     const loadData = async () => {
       try {
-        const [txs, accs] = await Promise.all([
+        const [txs, accs, aiData] = await Promise.all([
           getTransactions(user.uid),
-          getAccounts(user.uid)
+          getAccounts(user.uid),
+          getAiInsights()
         ]);
         setTransactions(txs);
         setAccounts(accs);
+        setInsights(aiData);
       } catch (err: any) {
-        console.error("Dashboard Load Error:", err);
+        // Erro silencioso para o usuário, logando apenas o essencial se necessário
+        console.debug("Dashboard data load issues handled.");
       } finally {
         setLoading(false);
       }
@@ -92,30 +95,6 @@ const Dashboard: React.FC = () => {
     return { income, expenses, gap: income - expenses, chartData: cumulative, totalAccountBalance };
   }, [transactions, accounts, viewMode, period]);
 
-  useEffect(() => {
-    if (!loading && transactions.length > 0 && !aiInsight && user) {
-      generateAiInsights();
-    }
-  }, [loading, transactions, aiInsight, user]);
-
-  const generateAiInsights = async () => {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Você é o guia financeiro do app Azular. Seja acolhedor e humano. 
-      Analise: Entradas ${formatCurrency(stats.income)}, Saídas ${formatCurrency(stats.expenses)}, Saldo ${formatCurrency(stats.gap)}. 
-      Dê um insight curto e encorajador em português (máx 15 palavras).`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
-
-      setAiInsight(response.text || "Continue cuidando do seu lar financeiro com calma.");
-    } catch (err) {
-      console.error("AI Insight Error:", err);
-    }
-  };
-
   const maskValue = (val: string) => showValues ? val : '••••••';
 
   if (loading) return <div className="p-12 text-center font-black uppercase text-blue-600 animate-pulse">Azulando seus dados...</div>;
@@ -152,17 +131,24 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {aiInsight && (
-        <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-2xl text-white flex items-start gap-6 animate-in fade-in slide-in-from-top-4 duration-700 relative overflow-hidden">
-          <div className="bg-white/20 p-4 rounded-2xl shrink-0">
-            <Sparkles size={28} className="text-blue-100" />
-          </div>
-          <div>
-            <h4 className="font-black text-[10px] uppercase tracking-widest opacity-60 mb-1">Guia Azular</h4>
-            <p className="text-xl font-bold leading-snug">{aiInsight}</p>
-          </div>
+      {/* Card de Insights Placeholder */}
+      <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-2xl text-white flex flex-col md:flex-row items-start gap-6 animate-in fade-in slide-in-from-top-4 duration-700 relative overflow-hidden group">
+        <div className="bg-white/20 p-4 rounded-2xl shrink-0">
+          <Sparkles size={28} className="text-blue-100" />
         </div>
-      )}
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-1">
+            <h4 className="font-black text-[10px] uppercase tracking-widest opacity-60">Insights do Azular</h4>
+            <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest">Em breve</span>
+          </div>
+          <p className="text-xl font-bold leading-snug">
+            {insights.length > 0 ? insights[0].message : "Estamos preparando recomendações para acelerar seu Recomeço."}
+          </p>
+        </div>
+        <button className="bg-white text-blue-600 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
+          Quero Ativar
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50">
@@ -187,7 +173,7 @@ const Dashboard: React.FC = () => {
           <div className={`text-2xl font-black tracking-tighter ${stats.gap >= 0 ? 'text-gray-900' : 'text-red-500'}`}>{maskValue(formatCurrency(stats.gap))}</div>
         </div>
         
-        {/* Card de Contas - Balão clicável para alternar entre contagem e saldo unificado */}
+        {/* Card de Contas */}
         <div 
           onClick={() => setShowAccountsBalance(!showAccountsBalance)}
           className="bg-white p-7 rounded-[2.5rem] shadow-sm border-2 border-blue-50 cursor-pointer hover:border-blue-300 hover:scale-[1.02] transition-all group active:scale-95"

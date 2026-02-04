@@ -1,19 +1,15 @@
 
+import './index.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import { isAiStudioPreview } from './utils/env';
 
-// Captura imediata de erros antes de qualquer import pesado
+// Captura imediata de erros
 window.onerror = (msg, source, line, col, error) => {
   const errStr = `Error: ${msg} at ${line}:${col}`;
-  (window as any).__AZULAR_BOOT_ERROR__ = errStr;
-  localStorage.setItem('azular_boot_error', errStr);
-};
-
-window.onunhandledrejection = (event) => {
-  const errStr = `Promise Rejection: ${event.reason}`;
   (window as any).__AZULAR_BOOT_ERROR__ = errStr;
   localStorage.setItem('azular_boot_error', errStr);
 };
@@ -34,19 +30,24 @@ const boot = () => {
       </React.StrictMode>
     );
     
-    // Sinaliza sucesso para o watchdog do index.html
     (window as any).__AZULAR_BOOT_OK__ = true;
-    console.log("Azular: React Boot OK");
+
+    // Registro do Service Worker apenas em produção real
+    if ('serviceWorker' in navigator && !isAiStudioPreview()) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(registration => {
+          console.log('Azular PWA: SW registrado com sucesso:', registration.scope);
+        }).catch(err => {
+          console.log('Azular PWA: Falha ao registrar SW:', err);
+        });
+      });
+    }
 
   } catch (err) {
     const errStr = err instanceof Error ? err.message : String(err);
     (window as any).__AZULAR_BOOT_ERROR__ = errStr;
-    
-    // Fallback visual imediato em caso de erro no render
     const msgEl = document.getElementById('boot-msg');
-    if (msgEl) msgEl.textContent = 'Falha crítica no início do React.';
-    const btn = document.getElementById('boot-diag-btn');
-    if (btn) btn.style.display = 'block';
+    if (msgEl) msgEl.textContent = 'Falha crítica no início do sistema.';
   }
 };
 

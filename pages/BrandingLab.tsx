@@ -1,54 +1,15 @@
 
-import React, { useState } from 'react';
-import { GoogleGenAI } from "@google/genai";
-import { Sparkles, Download, RefreshCw, Palette, Home, Layout as LayoutIcon } from 'lucide-react';
+import React from 'react';
+import { Palette, Home, Layout as LayoutIcon, Sparkles } from 'lucide-react';
 import BrandLogo from '../components/BrandLogo';
 
 const BrandingLab: React.FC = () => {
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [promptStyle, setPromptStyle] = useState('minimalist 3d glassmorphism');
-
-  const generateLogoArt = async () => {
-    setLoading(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            { text: `A professional high-quality app icon for a home finance app named 'Azular'. Style: ${promptStyle}. The icon should feature a minimalist house shape combined with a stylized letter A, using ocean blue and sky blue gradients. Clean white background, center composition, 4k resolution, welcoming and trustworthy vibe.` }
-          ]
-        }
-      });
-
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          setGeneratedImage(`data:image/png;base64,${part.inlineData.data}`);
-          break;
-        }
-      }
-    } catch (err) {
-      console.error("Erro ao gerar arte:", err);
-      alert("Ocorreu um erro na geração da imagem. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const styles = [
-    { id: 'minimalist 3d glassmorphism', label: 'Moderno 3D' },
-    { id: 'flat vector illustration', label: 'Ilustração Flat' },
-    { id: 'bauhaus geometric abstract', label: 'Geométrico' },
-    { id: 'soft claymorphism amigável', label: 'Amigável/Clay' },
-  ];
-
   return (
     <div className="space-y-10 pb-20">
       <header>
         <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Laboratório Criativo</h2>
         <p className="text-blue-500 font-bold uppercase text-[10px] tracking-widest mt-2 flex items-center gap-2">
-          <Palette size={14} /> Explore a Identidade Azular com IA
+          <Palette size={14} /> Explore a Identidade Azular
         </p>
       </header>
 
@@ -65,59 +26,28 @@ const BrandingLab: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl">
-            <h3 className="font-black uppercase text-xs opacity-60 mb-6 tracking-widest">Gerador de Variações</h3>
-            <div className="space-y-4">
-              <label className="text-[10px] font-black uppercase">Escolha um estilo visual:</label>
-              <div className="grid grid-cols-2 gap-3">
-                {styles.map(s => (
-                  <button 
-                    key={s.id}
-                    onClick={() => setPromptStyle(s.id)}
-                    className={`p-4 rounded-2xl text-[10px] font-black uppercase border-2 transition-all ${promptStyle === s.id ? 'bg-white text-blue-600 border-white shadow-lg' : 'bg-blue-700/50 border-white/10 text-white hover:bg-blue-700'}`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-              <button 
-                onClick={generateLogoArt}
-                disabled={loading}
-                className="w-full mt-4 bg-white text-blue-600 py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-2xl hover:scale-[1.02] transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
-              >
-                {loading ? <RefreshCw className="animate-spin" /> : <Sparkles size={18} />}
-                {loading ? 'Azulando sua Arte...' : 'Gerar Arte com IA'}
-              </button>
-            </div>
+          <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex flex-col items-center text-center justify-center py-12">
+            <Sparkles size={48} className="mb-4 opacity-40" />
+            <h3 className="font-black uppercase text-sm mb-2 tracking-widest">IA do Design</h3>
+            <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest max-w-[200px]">
+              O gerador de variações está sendo movido para um ambiente seguro.
+            </p>
+            <div className="mt-6 bg-white/10 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-[0.2em]">Manutenção Criativa</div>
           </div>
         </div>
 
         <div className="bg-white p-8 rounded-[3rem] border-2 border-blue-50 shadow-sm flex flex-col min-h-[500px]">
-          <h3 className="font-black uppercase text-xs text-gray-400 mb-6 tracking-widest">Resultado da IA</h3>
-          <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-[2rem] overflow-hidden relative group">
-            {generatedImage ? (
-              <>
-                <img src={generatedImage} alt="AI Generated Logo" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-blue-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <a 
-                    href={generatedImage} 
-                    download="azular-brand-art.png"
-                    className="bg-white text-blue-600 p-4 rounded-full shadow-2xl hover:scale-110 transition-all"
-                  >
-                    <Download size={24} />
-                  </a>
-                </div>
-              </>
-            ) : (
-              <div className="text-center p-10">
-                <LayoutIcon size={48} className="mx-auto text-gray-200 mb-4" />
-                <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Aguardando comando criativo...</p>
-              </div>
-            )}
+          <h3 className="font-black uppercase text-xs text-gray-400 mb-6 tracking-widest">Paleta Azular</h3>
+          <div className="flex-1 space-y-4">
+            <div className="bg-[#2563EB] h-24 rounded-2xl flex items-end p-4 text-white font-black uppercase text-xs">Azul Azular (#2563EB)</div>
+            <div className="bg-[#60A5FA] h-20 rounded-2xl flex items-end p-4 text-white font-black uppercase text-xs">Céu Azular (#60A5FA)</div>
+            <div className="bg-[#F0F7FF] h-16 rounded-2xl flex items-end p-4 text-blue-600 font-black uppercase text-xs">Nuvem Azular (#F0F7FF)</div>
+            
+            <div className="pt-8 border-t border-gray-50 text-center">
+               <LayoutIcon size={48} className="mx-auto text-gray-100 mb-4" />
+               <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Visual Showroom — 100% Client Side Stable</p>
+            </div>
           </div>
-          <p className="text-[9px] text-gray-400 font-bold uppercase mt-6 text-center italic">
-            Esta funcionalidade utiliza o modelo Gemini 2.5 Flash Image para criar representações artísticas da nossa marca.
-          </p>
         </div>
       </div>
     </div>

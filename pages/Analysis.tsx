@@ -8,8 +8,7 @@ import { parseNumericValue } from '../utils/number';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
 } from 'recharts';
-import { BrainCircuit, Activity, Lock, Play } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { BrainCircuit, Activity, Lock, Play, Sparkles } from 'lucide-react';
 import ChartShell from '../components/ChartShell';
 import BannerAd from '../components/BannerAd';
 import RewardedAdModal from '../components/RewardedAdModal';
@@ -20,7 +19,6 @@ const Analysis: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [showAdModal, setShowAdModal] = useState(false);
   const [hasDeepInsights, setHasDeepInsights] = useState(adService.hasBenefit('DEEP_INSIGHTS'));
 
@@ -48,16 +46,6 @@ const Analysis: React.FC = () => {
       }))
       .sort((a, b) => b.value - a.value);
   }, [transactions, categories]);
-
-  useEffect(() => {
-    if (hasDeepInsights && !loading && transactions.length > 0 && !aiInsight && user) {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Analise essas finanças para o app Azular: ${transactions.length} transações. Dê um conselho de cuidado financeiro (máx 15 palavras).`,
-      }).then((res) => setAiInsight(res.text));
-    }
-  }, [loading, transactions, aiInsight, user, hasDeepInsights]);
 
   const COLORS = ['#2563EB', '#34D399', '#F87171', '#FBBF24', '#8B5CF6', '#EC4899'];
 
@@ -93,15 +81,16 @@ const Analysis: React.FC = () => {
           </button>
         </div>
       ) : (
-        aiInsight && (
-          <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-start gap-6 relative overflow-hidden">
-            <div className="p-3 bg-white/20 rounded-2xl"><BrainCircuit size={28} /></div>
-            <div>
-              <h4 className="font-black uppercase text-[10px] tracking-widest mb-1 opacity-60">Insight Azular</h4>
-              <p className="text-xl font-bold leading-tight">{aiInsight}</p>
+        <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-start gap-6 relative overflow-hidden">
+          <div className="p-3 bg-white/20 rounded-2xl"><BrainCircuit size={28} /></div>
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">Insight Azular</h4>
+              <Sparkles size={12} className="text-blue-200" />
             </div>
+            <p className="text-xl font-bold leading-tight">Um passo de cada vez. Sua organização hoje é o seu sossego de amanhã.</p>
           </div>
-        )
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-12">
