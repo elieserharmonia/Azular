@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { firebaseEnabled } from './lib/firebase';
@@ -13,12 +12,13 @@ import Dashboard from './pages/Dashboard';
 import Analysis from './pages/Analysis';
 import Transactions from './pages/Transactions';
 import Provision from './pages/Provision';
+import RestartPlan from './pages/RestartPlan';
 import Accounts from './pages/Accounts';
 import Goals from './pages/Goals';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import PrintReport from './pages/PrintReport';
-import RestartPlan from './pages/RestartPlan';
+import RestartPlanPage from './pages/RestartPlan';
 import Diagnostics from './pages/Diagnostics';
 import AdminUsers from './pages/AdminUsers';
 
@@ -57,13 +57,15 @@ const App: React.FC = () => {
   const isPreview = isAiStudioPreview();
 
   useEffect(() => {
-    let unsubscribe: () => void = () => {};
+    let unsubscribeAuth: () => void = () => {};
+    let unsubscribeProfile: (() => void) | null = null;
 
     const initAuth = async () => {
       if (isPreview || !firebaseEnabled) {
-        // Mock User para Preview
+        // Mock User para Preview com persistência local simples
+        const savedProfile = localStorage.getItem('azular_preview_profile');
         setUser({ uid: 'preview-uid', email: 'preview@azular.app' });
-        setUserProfile({ displayName: 'Visitante Preview', currency: 'BRL' });
+        setUserProfile(savedProfile ? JSON.parse(savedProfile) : { displayName: 'Visitante Preview', currency: 'BRL' });
         setLoading(false);
         return;
       }
@@ -72,33 +74,48 @@ const App: React.FC = () => {
         const auth = await getAuthClient();
         const db = await getDb();
         const { onAuthStateChanged } = await import('firebase/auth');
-        const { doc, getDoc, setDoc, serverTimestamp } = await import('firebase/firestore');
+        const { doc, onSnapshot, setDoc, serverTimestamp, getDoc } = await import('firebase/firestore');
         
-        unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+          if (unsubscribeProfile) {
+            unsubscribeProfile();
+            unsubscribeProfile = null;
+          }
+
           setUser(currentUser);
+          
           if (currentUser) {
-            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-            if (userDoc.exists()) {
-              setUserProfile(userDoc.data());
-            } else {
-              const defaultProfile = {
-                uid: currentUser.uid,
-                displayName: currentUser.displayName || 'Usuário',
-                fullName: currentUser.displayName || '',
-                email: currentUser.email,
-                currency: 'BRL',
-                locale: 'pt-BR',
-                monthStartDay: 1,
-                marketingOptIn: false,
-                createdAt: serverTimestamp()
-              };
-              await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
-              setUserProfile(defaultProfile);
-            }
+            // Escuta o perfil em tempo real para que qualquer mudança salve na hora na UI
+            const userDocRef = doc(db, 'users', currentUser.uid);
+            
+            unsubscribeProfile = onSnapshot(userDocRef, async (snapshot) => {
+              if (snapshot.exists()) {
+                setUserProfile(snapshot.data());
+              } else {
+                // Cria perfil padrão se não existir
+                const defaultProfile = {
+                  uid: currentUser.uid,
+                  displayName: currentUser.displayName || 'Usuário',
+                  fullName: currentUser.displayName || '',
+                  email: currentUser.email,
+                  currency: 'BRL',
+                  locale: 'pt-BR',
+                  monthStartDay: 1,
+                  marketingOptIn: false,
+                  createdAt: serverTimestamp()
+                };
+                await setDoc(userDocRef, defaultProfile);
+                setUserProfile(defaultProfile);
+              }
+              setLoading(false);
+            }, (error) => {
+              console.error("Profile Subscription Error:", error);
+              setLoading(false);
+            });
           } else {
             setUserProfile(null);
+            setLoading(false);
           }
-          setLoading(false);
         });
       } catch (e) {
         console.error("Auth Init Error:", e);
@@ -107,7 +124,10 @@ const App: React.FC = () => {
     };
 
     initAuth();
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) (unsubscribeProfile as any)();
+    };
   }, [isPreview]);
 
   return (
@@ -124,7 +144,7 @@ const App: React.FC = () => {
             <Route path="analysis" element={<Analysis />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="provision" element={<Provision />} />
-            <Route path="restart-plan" element={<RestartPlan />} />
+            <Route path="restart-plan" element={<RestartPlanPage />} />
             <Route path="accounts" element={<Accounts />} />
             <Route path="goals" element={<Goals />} />
             <Route path="reports" element={<Reports />} />

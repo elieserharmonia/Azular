@@ -1,4 +1,3 @@
-
 import { firebaseEnabled } from '../lib/firebase';
 import { getDb } from './firestoreClient';
 import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
@@ -21,7 +20,10 @@ const demoStore = {
 };
 
 export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
-  if (!firebaseEnabled) return null;
+  if (!firebaseEnabled) {
+    const profiles = JSON.parse(localStorage.getItem('azular_demo_profiles') || '{}');
+    return profiles[uid] || null;
+  }
   const db = await getDb();
   const { doc, getDoc } = await import('firebase/firestore');
   const snap = await getDoc(doc(db, 'users', uid));
@@ -29,7 +31,15 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
 };
 
 export const saveUserProfile = async (uid: string, data: Partial<UserProfile>) => {
-  if (!firebaseEnabled) return;
+  if (!firebaseEnabled) {
+    const profiles = JSON.parse(localStorage.getItem('azular_demo_profiles') || '{}');
+    const updated = { ...(profiles[uid] || {}), ...data, uid, updatedAt: new Date().toISOString() };
+    profiles[uid] = updated;
+    localStorage.setItem('azular_demo_profiles', JSON.stringify(profiles));
+    // Se for preview, também salva em uma chave única para o App.tsx detectar mudança (mock)
+    localStorage.setItem('azular_preview_profile', JSON.stringify(updated));
+    return;
+  }
   const db = await getDb();
   const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
   return setDoc(doc(db, 'users', uid), { 
@@ -42,7 +52,7 @@ export const saveUserProfile = async (uid: string, data: Partial<UserProfile>) =
 export const getAdminUsersForExport = async () => {
   if (!firebaseEnabled) return [];
   const db = await getDb();
-  const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
+  const { collection, query, where, getDocs } = await import('firebase/firestore');
   const q = query(
     collection(db, 'users'), 
     where('marketingOptIn', '==', true)
