@@ -3,115 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Azular — Cuidar do dinheiro começa em casa</title>
-    <link rel="manifest" href="/manifest.json">
+    <title>Azular — Finanças Domésticas</title>
     <link rel="stylesheet" href="/index.css">
     
-    <!-- PWA Primary Color -->
+    <!-- PWA Basic Meta -->
     <meta name="theme-color" content="#2563EB">
     <meta name="mobile-web-app-capable" content="yes">
-    
-    <!-- iOS Support -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Azular">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/9431/9431057.png">
-    
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     
     <script>
-        // Polyfills and global state
+        // Polyfills e estado global mínimo para boot
         window.process = { env: { NODE_ENV: 'production', API_KEY: '' } };
         window.__AZULAR_BOOT_OK__ = false;
-        window.__AZULAR_BOOT_ERROR__ = null;
-        window.__AZULAR_MODULE_ERRORS = [];
-
-        // Global error listener for both traditional and module scripts
-        window.addEventListener('error', function(event) {
-            const error = event.error || event.message;
-            window.__AZULAR_BOOT_ERROR__ = error;
-            window.__AZULAR_MODULE_ERRORS.push({
-                type: 'error',
-                message: error,
-                target: event.target ? event.target.tagName : 'unknown',
-                time: new Date().toISOString()
-            });
-            console.error('Boot Error:', event);
-        }, true);
-
-        // Listener for unhandled promise rejections (async boot issues)
-        window.addEventListener('unhandledrejection', function(event) {
-            window.__AZULAR_BOOT_ERROR__ = event.reason;
-            window.__AZULAR_MODULE_ERRORS.push({
-                type: 'promise_rejection',
-                reason: event.reason,
-                time: new Date().toISOString()
-            });
-            console.error('Unhandled Rejection:', event.reason);
-        });
+        window.__AZULAR_RESOURCES = {
+            manifest: false,
+            sw: false,
+            fonts: false
+        };
     </script>
 
     <script type="importmap">
-    {
-      "imports": {
-        "react/": "https://esm.sh/react@^19.2.4/",
-        "react": "https://esm.sh/react@^19.2.4",
-        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-        "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
-        "firebase/": "https://esm.sh/firebase@^12.8.0/",
-        "firebase/app": "https://esm.sh/firebase@^12.8.0/app",
-        "firebase/auth": "https://esm.sh/firebase@^12.8.0/auth",
-        "firebase/firestore": "https://esm.sh/firebase@^12.8.0/firestore",
-        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
-        "vite": "https://esm.sh/vite@^7.3.1",
-        "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
-        "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-        "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
-        "recharts": "https://esm.sh/recharts@^3.7.0",
-        "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.2"
-      }
-    }
-    </script>
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
+    "firebase/": "https://esm.sh/firebase@^12.8.0/",
+    "firebase/app": "https://esm.sh/firebase@^12.8.0/app",
+    "firebase/auth": "https://esm.sh/firebase@^12.8.0/auth",
+    "firebase/firestore": "https://esm.sh/firebase@^12.8.0/firestore",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.2"
+  }
+}
+</script>
 </head>
-<body class="bg-[#F4F7FE]">
+<body>
     <div id="root">
-        <div id="boot-ui" class="flex flex-col items-center justify-center h-screen text-center p-5">
-            <div id="boot-spinner"></div>
-            <h1 class="font-black text-2xl text-[#1e293b] m-0 tracking-tighter">AZULAR</h1>
-            <p id="boot-msg" class="text-[#64748b] font-medium mt-2.5 text-sm">Protegendo seu lar financeiro...</p>
-            
-            <button id="boot-diag-btn" class="boot-btn" style="display:none;">Ver Diagnóstico</button>
-            <div id="boot-diag-box" class="diag-box" style="display:none;"></div>
+        <!-- Loader inicial minimalista sem dependência de rede -->
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#F4F7FE;">
+            <div style="width:40px; height:40px; border:4px solid #e2e8f0; border-top:4px solid #2563eb; border-radius:50%; animation:spin 1s linear infinite;"></div>
+            <h1 style="font-weight:900; letter-spacing:-0.05em; color:#1e293b; margin-top:20px;">AZULAR</h1>
         </div>
     </div>
-
-    <script>
-        // Check for slow boot or failure
-        setTimeout(() => {
-            if (!window.__AZULAR_BOOT_OK__) {
-                const msg = document.getElementById('boot-msg');
-                const btn = document.getElementById('boot-diag-btn');
-                const spinner = document.getElementById('boot-spinner');
-                if (msg) msg.textContent = 'O carregamento está demorando. Pode haver um erro de compatibilidade.';
-                if (spinner) spinner.style.borderColor = '#ef4444';
-                if (btn) btn.style.display = 'block';
-                
-                btn.onclick = () => {
-                    const box = document.getElementById('boot-diag-box');
-                    box.style.display = 'block';
-                    box.textContent = JSON.stringify({
-                        url: location.href,
-                        origin: location.origin,
-                        online: navigator.onLine,
-                        boot_error: window.__AZULAR_BOOT_ERROR__,
-                        module_log: window.__AZULAR_MODULE_ERRORS,
-                        userAgent: navigator.userAgent
-                    }, null, 2);
-                };
-            }
-        }, 8000);
-    </script>
+    <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

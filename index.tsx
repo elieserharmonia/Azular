@@ -5,38 +5,48 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { isPreview } from './utils/env';
 
-// Error tracking for diagnostic box
-window.onerror = (msg, source, line, col, error) => {
-  const errStr = `Error: ${msg} at ${line}:${col}`;
-  (window as any).__AZULAR_BOOT_ERROR__ = errStr;
-};
+const PREVIEW_MODE = isPreview();
 
-async function registerServiceWorker() {
-  // Service workers are typically restricted in preview blob environments
-  if (isPreview()) return;
-  if (!('serviceWorker' in navigator)) return;
+// 1. Injeção Dinâmica de Recursos (Apenas Produção)
+function bootstrapResources() {
+  if (PREVIEW_MODE) return;
 
   try {
-    const resp = await fetch('/sw.js', { method: 'HEAD', cache: 'no-store' });
-    if (!resp.ok || !resp.headers.get('content-type')?.includes('javascript')) {
-      return;
+    // Injetar Manifest
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = '/manifest.json';
+    document.head.appendChild(manifestLink);
+    (window as any).__AZULAR_RESOURCES.manifest = true;
+
+    // Injetar Fonts Externas
+    const fontsLink = document.createElement('link');
+    fontsLink.rel = 'stylesheet';
+    fontsLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap';
+    document.head.appendChild(fontsLink);
+    (window as any).__AZULAR_RESOURCES.fonts = true;
+
+    // Registrar Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(() => { (window as any).__AZULAR_RESOURCES.sw = true; })
+          .catch(err => console.warn('SW registration failed:', err));
+      });
     }
-    await navigator.serviceWorker.register('/sw.js');
-    console.log('Azular SW: Ativo');
-  } catch (err) {
-    console.error('Azular SW: Falha', err);
+  } catch (e) {
+    console.error('Error injecting production resources:', e);
   }
 }
 
-const boot = () => {
+const renderApp = () => {
   const rootElement = document.getElementById('root');
   if (!rootElement) return;
 
   try {
     const root = createRoot(rootElement);
     
-    // Mark boot as OK before render to prevent the timeout in index.html from showing the error UI
-    // React 18 render is concurrent, but the execution of index.tsx reaching this point means modules loaded.
+    // Marcar boot como OK
     (window as any).__AZULAR_BOOT_OK__ = true;
 
     root.render(
@@ -49,15 +59,11 @@ const boot = () => {
       </React.StrictMode>
     );
     
-    registerServiceWorker();
+    bootstrapResources();
 
   } catch (err) {
-    console.error('Root Boot Crash:', err);
-    const errStr = err instanceof Error ? err.message : String(err);
-    (window as any).__AZULAR_BOOT_ERROR__ = errStr;
-    (window as any).__AZULAR_BOOT_OK__ = false;
+    console.error('Crash during React boot:', err);
   }
 };
 
-// Execute boot process
-boot();
+renderApp();
