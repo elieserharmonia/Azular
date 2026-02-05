@@ -1,33 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
-import { getTransactions, getAccounts, getDebts, getGoals } from '../services/db';
+import { dbClient } from '../services/dbClient';
 import { Transaction, Account, Debt, Goal } from '../types';
 import { formatCurrency, getCurrentMonth } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
+import { safeStorage } from '../utils/storage';
 import { 
   Eye, 
   EyeOff, 
-  Bell, 
   Moon, 
   Sun, 
-  ChevronRight, 
   PlusCircle, 
   CalendarRange, 
   BarChart3, 
-  Wallet, 
   HeartPulse, 
-  User as UserIcon, 
-  FileText, 
-  HelpCircle,
-  Sparkles,
-  Landmark,
-  TrendingUp as TrendingIcon,
-  AlertTriangle,
-  CheckCircle2,
-  TrendingDown,
-  Zap,
-  Gem
+  Sparkles, 
+  AlertTriangle, 
+  CheckCircle2, 
+  TrendingDown, 
+  Gem,
+  TrendingUp as TrendingIcon
 } from 'lucide-react';
 import BannerAd from '../components/BannerAd';
 
@@ -41,18 +34,18 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'conta' | 'invest'>('conta');
   
-  const [showValues, setShowValues] = useState(() => localStorage.getItem('azular_hide_values') !== 'true');
-  const [isDark, setIsDark] = useState(() => localStorage.getItem('azular_theme') === 'dark');
+  const [showValues, setShowValues] = useState(() => safeStorage.get('azular_hide_values') !== 'true');
+  const [isDark, setIsDark] = useState(() => safeStorage.get('azular_theme') === 'dark');
 
   useEffect(() => {
     if (!user) return;
     const loadData = async () => {
       try {
         const [txs, accs, dbt, gls] = await Promise.all([
-          getTransactions(user.uid),
-          getAccounts(user.uid),
-          getDebts(user.uid),
-          getGoals(user.uid)
+          dbClient.getTransactions(user.uid),
+          dbClient.getAccounts(user.uid),
+          dbClient.getDebts(user.uid),
+          dbClient.getGoals(user.uid)
         ]);
         setTransactions(txs);
         setAccounts(accs);
@@ -68,14 +61,14 @@ const Dashboard: React.FC = () => {
   const toggleTheme = () => {
     const nextTheme = !isDark;
     setIsDark(nextTheme);
-    localStorage.setItem('azular_theme', nextTheme ? 'dark' : 'light');
+    safeStorage.set('azular_theme', nextTheme ? 'dark' : 'light');
     window.document.documentElement.classList.toggle('dark', nextTheme);
   };
 
   const toggleValues = () => {
     const nextShow = !showValues;
     setShowValues(nextShow);
-    localStorage.setItem('azular_hide_values', String(!nextShow));
+    safeStorage.set('azular_hide_values', String(!nextShow));
   };
 
   const dashboardStats = useMemo(() => {
@@ -108,12 +101,11 @@ const Dashboard: React.FC = () => {
   const mask = (val: string) => showValues ? val : 'R$ •••••';
 
   const quickActions = [
-    { label: 'LANÇAR', icon: <PlusCircle />, path: '/app/transactions', state: { openModal: true } },
-    { label: 'PREVISÃO', icon: <CalendarRange />, path: '/app/provision' },
-    { label: 'PATRIMÔNIO', icon: <Gem />, path: '/app/accounts' }, // Agora leva para contas/patrimônio
-    { label: 'GRÁFICOS', icon: <BarChart3 />, path: '/app/analysis' },
-    { label: 'RECOMEÇO', icon: <HeartPulse />, path: '/app/restart-plan' },
-    { label: 'RELATÓRIOS', icon: <FileText />, path: '/app/reports' },
+    { label: 'LANÇAR', icon: <PlusCircle size={24} />, path: '/app/transactions', state: { openModal: true } },
+    { label: 'PREVISÃO', icon: <CalendarRange size={24} />, path: '/app/provision' },
+    { label: 'PATRIMÔNIO', icon: <Gem size={24} />, path: '/app/accounts' },
+    { label: 'GRÁFICOS', icon: <BarChart3 size={24} />, path: '/app/analysis' },
+    { label: 'RECOMEÇO', icon: <HeartPulse size={24} />, path: '/app/restart-plan' },
   ];
 
   if (loading) return <div className="flex flex-col items-center justify-center min-h-[80vh] gap-4"><div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
@@ -184,7 +176,7 @@ const Dashboard: React.FC = () => {
             <section className="grid grid-cols-3 gap-3">
               {quickActions.map((action, idx) => (
                 <button key={idx} onClick={() => navigate(action.path, { state: (action as any).state })} className="bg-white dark:bg-slate-900 rounded-3xl p-4 flex flex-col items-center justify-center gap-2 border border-white dark:border-slate-800 active:scale-95 transition-all shadow-sm h-24">
-                  <div className="text-blue-600">{React.cloneElement(action.icon as React.ReactElement, { size: 24 })}</div>
+                  <div className="text-blue-600">{action.icon}</div>
                   <span className="text-[8px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter text-center leading-none">{action.label}</span>
                 </button>
               ))}

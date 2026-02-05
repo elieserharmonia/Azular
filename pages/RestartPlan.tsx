@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { firebaseEnabled } from '../lib/firebase';
@@ -56,7 +55,8 @@ const RestartPlan: React.FC = () => {
         alert("Modo local: recarregue para ver os dados simulados.");
       } else {
         const db = await getDb();
-        const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+        // Fix: cast dynamic firestore import to any
+        const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
         await addDoc(collection(db, 'debts'), {
           ...formData,
           totalAmount: parseNumericValue(formData.totalAmount),
@@ -84,7 +84,8 @@ const RestartPlan: React.FC = () => {
            alert("Funcionalidade limitada no modo Preview.");
         } else {
           const db = await getDb();
-          const { deleteDoc, doc } = await import('firebase/firestore');
+          // Fix: cast dynamic firestore import to any
+          const { deleteDoc, doc } = (await import('firebase/firestore')) as any;
           await deleteDoc(doc(db, 'debts', id));
           await loadData();
         }

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { getGoals, getAccounts, getCategories } from '../services/db';
@@ -63,7 +62,8 @@ const Goals: React.FC = () => {
       alert("Criação de sonhos limitada no modo Preview.");
     } else {
       const db = await getDb();
-      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+      // Fix: cast dynamic firestore import to any
+      const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
       await addDoc(collection(db, 'goals'), {
         ...goalForm,
         targetAmount: parseNumericValue(goalForm.targetAmount),
@@ -87,7 +87,8 @@ const Goals: React.FC = () => {
         alert("Aportes indisponíveis no modo Preview.");
       } else {
         const db = await getDb();
-        const { collection, addDoc, serverTimestamp, updateDoc, doc } = await import('firebase/firestore');
+        // Fix: cast dynamic firestore import to any
+        const { collection, addDoc, serverTimestamp, updateDoc, doc } = (await import('firebase/firestore')) as any;
         
         await addDoc(collection(db, 'goalContributions'), {
           userId: user.uid,

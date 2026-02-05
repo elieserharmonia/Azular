@@ -1,15 +1,17 @@
-// src/utils/env.ts
-export const BUILD_ID = "2025.02.21.01"; // Formato: AAAA.MM.DD.REV
+export const BUILD_ID = "2025.02.21.05";
 
-export function isAiStudioPreview(): boolean {
+export function isPreview(): boolean {
   if (typeof window === "undefined") return false;
-
-  const hostname = window.location.hostname;
-  const origin = window.location.origin;
+  
+  const href = window.location.href || "";
+  const origin = window.location.origin || "";
+  const hostname = window.location.hostname || "";
 
   return (
-    hostname.includes("usercontent.goog") ||
+    href.startsWith("blob:") ||
+    origin.includes("usercontent.goog") ||
     hostname.includes("ai.studio") ||
-    origin.includes("scf.usercontent.goog")
+    hostname === "localhost" ||
+    hostname === "127.0.0.1"
   );
 }

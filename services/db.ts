@@ -1,152 +1,151 @@
 import { firebaseEnabled } from '../lib/firebase';
 import { getDb } from './firestoreClient';
+import { localDbClient } from './localDbClient';
 import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
 
-const demoStore = {
-  get: (key: string) => {
-    try {
-      const data = localStorage.getItem(`azular_demo_${key}`);
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  },
-  set: (key: string, data: any[]) => {
-    localStorage.setItem(`azular_demo_${key}`, JSON.stringify(data));
-  },
-  add: (key: string, item: any) => {
-    const data = demoStore.get(key);
-    const newItem = { 
-      ...item, 
-      id: Math.random().toString(36).substring(2, 11), 
-      createdAt: new Date().toISOString() 
-    };
-    demoStore.set(key, [...data, newItem]);
-    return newItem;
-  }
-};
+/**
+ * Facade Global de Dados
+ */
 
-export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
+export const getTransactions = async (userId: string, competenceMonth?: string): Promise<Transaction[]> => {
   if (!firebaseEnabled) {
-    const profiles = JSON.parse(localStorage.getItem('azular_demo_profiles') || '{}');
-    return profiles[uid] || null;
+    let txs = await localDbClient.getTransactions(userId);
+    if (competenceMonth) txs = txs.filter(t => t.competenceMonth === competenceMonth);
+    return txs;
   }
   const db = await getDb();
-  const { doc, getDoc } = await import('firebase/firestore');
-  const snap = await getDoc(doc(db, 'users', uid));
-  return snap.exists() ? snap.data() as UserProfile : null;
-};
-
-export const saveUserProfile = async (uid: string, data: Partial<UserProfile>) => {
-  if (!firebaseEnabled) {
-    const profiles = JSON.parse(localStorage.getItem('azular_demo_profiles') || '{}');
-    const updated = { ...(profiles[uid] || {}), ...data, uid, updatedAt: new Date().toISOString() };
-    profiles[uid] = updated;
-    localStorage.setItem('azular_demo_profiles', JSON.stringify(profiles));
-    localStorage.setItem('azular_preview_profile', JSON.stringify(updated));
-    return;
-  }
-  const db = await getDb();
-  const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
-  return setDoc(doc(db, 'users', uid), { 
-    ...data, 
-    uid, 
-    updatedAt: serverTimestamp() 
-  }, { merge: true });
-};
-
-export const getTransactions = async (userId: string, competenceMonth?: string) => {
-  if (!firebaseEnabled) {
-    let docs = demoStore.get('transactions') as Transaction[];
-    if (competenceMonth) docs = docs.filter(t => t.competenceMonth === competenceMonth);
-    return docs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }
-  const db = await getDb();
-  const { collection, query, where, getDocs } = await import('firebase/firestore');
+  // Fix: cast dynamic firestore import to any
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
   const q = query(collection(db, 'transactions'), where('userId', '==', userId));
   const snap = await getDocs(q);
-  let docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+  let docs = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Transaction));
   if (competenceMonth) docs = docs.filter(t => t.competenceMonth === competenceMonth);
   return docs;
 };
 
-export const getAccounts = async (userId: string) => {
-  if (!firebaseEnabled) {
-    const accs = demoStore.get('accounts');
-    return accs.length ? accs : [{ id: 'demo-acc', name: 'Conta Principal', initialBalance: 0, kind: 'checking', active: true }];
-  }
+export const getAccounts = async (userId: string): Promise<Account[]> => {
+  if (!firebaseEnabled) return localDbClient.getAccounts(userId);
   const db = await getDb();
-  const { collection, query, where, getDocs } = await import('firebase/firestore');
+  // Fix: cast dynamic firestore import to any
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
   const q = query(collection(db, 'accounts'), where('userId', '==', userId));
   const snap = await getDocs(q);
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account));
+  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Account));
 };
 
-export const getCategories = async (userId: string) => {
-  if (!firebaseEnabled) return demoStore.get('categories');
+export const getCategories = async (userId: string): Promise<Category[]> => {
+  if (!firebaseEnabled) return localDbClient.getCategories(userId);
   const db = await getDb();
-  const { collection, query, where, getDocs } = await import('firebase/firestore');
+  // Fix: cast dynamic firestore import to any
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
   const q = query(collection(db, 'categories'), where('userId', '==', userId));
   const snap = await getDocs(q);
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
+  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category));
 };
 
-export const createCategory = async (userId: string, name: string, direction: 'credit' | 'debit' | 'both') => {
-  if (!firebaseEnabled) {
-    const newCat = demoStore.add('categories', { userId, name, direction });
-    return newCat.id;
+export const addTransaction = async (data: Partial<Transaction>) => {
+  if (!firebaseEnabled) return localDbClient.addTransaction(data);
+  
+  if (!data.userId) {
+    throw new Error("MISSING_USERID");
   }
+
   const db = await getDb();
-  const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+  // Fix: cast dynamic firestore import to any
+  const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+  
+  return addDoc(collection(db, 'transactions'), { 
+    ...data, 
+    createdAt: serverTimestamp(), 
+    updatedAt: serverTimestamp() 
+  });
+};
+
+export const updateTransaction = async (id: string, data: Partial<Transaction>) => {
+  if (!firebaseEnabled) return localDbClient.updateTransaction(id, data);
+  
+  const db = await getDb();
+  // Fix: cast dynamic firestore import to any
+  const { doc, getDoc, updateDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+  const ref = doc(db, 'transactions', id);
+
+  // Pre-flight check to handle Firestore Rules "Insufficient Permissions" gracefully
+  // and identify orphan documents without userId
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    throw new Error("NOT_FOUND");
+  }
+
+  const currentData = snap.data();
+  if (!currentData.userId) {
+    throw new Error("ORPHAN_DOC");
+  }
+
+  // Se o usuário logado for diferente do dono do documento
+  if (data.userId && currentData.userId !== data.userId) {
+    throw new Error("FORBIDDEN");
+  }
+
+  return updateDoc(ref, { 
+    ...data, 
+    updatedAt: serverTimestamp() 
+  });
+};
+
+export const deleteTransaction = async (id: string) => {
+  if (!firebaseEnabled) return localDbClient.deleteTransaction(id);
+  const db = await getDb();
+  // Fix: cast dynamic firestore import to any
+  const { doc, deleteDoc } = (await import('firebase/firestore')) as any;
+  return deleteDoc(doc(db, 'transactions', id));
+};
+
+export const createCategory = async (userId: string, name: string, direction: any) => {
+  if (!firebaseEnabled) return localDbClient.createCategory(userId, name, direction);
+  const db = await getDb();
+  // Fix: cast dynamic firestore import to any
+  const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
   const docRef = await addDoc(collection(db, 'categories'), { userId, name, direction, createdAt: serverTimestamp() });
   return docRef.id;
 };
 
-export const addTransaction = async (data: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => {
-  if (!firebaseEnabled) return demoStore.add('transactions', data);
+export const getDebts = async (userId: string): Promise<Debt[]> => {
+  if (!firebaseEnabled) return localDbClient.getDebts(userId);
   const db = await getDb();
-  const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
-  return addDoc(collection(db, 'transactions'), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  // Fix: cast dynamic firestore import to any
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+  const q = query(collection(db, 'debts'), where('userId', '==', userId));
+  const snap = await getDocs(q);
+  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Debt));
 };
 
-export const updateTransaction = async (id: string, data: Partial<Transaction>) => {
+export const getGoals = async (userId: string): Promise<Goal[]> => {
+  if (!firebaseEnabled) return localDbClient.getGoals(userId);
+  const db = await getDb();
+  // Fix: cast dynamic firestore import to any
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+  const q = query(collection(db, 'goals'), where('userId', '==', userId));
+  const snap = await getDocs(q);
+  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Goal));
+};
+
+export const saveUserProfile = async (uid: string, data: any) => {
   if (!firebaseEnabled) {
-    const docs = demoStore.get('transactions');
-    const idx = docs.findIndex((d: any) => d.id === id);
-    if (idx !== -1) {
-      docs[idx] = { ...docs[idx], ...data, updatedAt: new Date().toISOString() };
-      demoStore.set('transactions', docs);
-    }
+    localStorage.setItem('azular_preview_profile', JSON.stringify({ ...data, uid }));
     return;
   }
   const db = await getDb();
-  const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
-  const ref = doc(db, 'transactions', id);
-  const { id: _, ...cleanData } = data as any;
-  return updateDoc(ref, { ...cleanData, updatedAt: serverTimestamp() });
+  // Fix: cast dynamic firestore import to any
+  const { doc, setDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+  return setDoc(doc(db, 'users', uid), { ...data, uid, updatedAt: serverTimestamp() }, { merge: true });
 };
 
-export const deleteTransaction = async (id: string) => {
-  if (!firebaseEnabled) {
-    const docs = demoStore.get('transactions');
-    demoStore.set('transactions', docs.filter((d: any) => d.id !== id));
-    return;
-  }
-  const db = await getDb();
-  const { doc, deleteDoc } = await import('firebase/firestore');
-  return deleteDoc(doc(db, 'transactions', id));
-};
-
-export const getDebts = async (userId: string) => !firebaseEnabled ? demoStore.get('debts') : [];
-export const getGoals = async (userId: string) => !firebaseEnabled ? demoStore.get('goals') : [];
-
-// Fix: Added getAdminUsersForExport to support fetching users who opted into marketing communications
 export const getAdminUsersForExport = async (): Promise<UserProfile[]> => {
-  if (!firebaseEnabled) {
-    const profiles = JSON.parse(localStorage.getItem('azular_demo_profiles') || '{}');
-    return Object.values(profiles).filter((u: any) => u.marketingOptIn) as UserProfile[];
-  }
+  if (!firebaseEnabled) return [];
   const db = await getDb();
-  const { collection, query, where, getDocs } = await import('firebase/firestore');
+  // Fix: cast dynamic firestore import to any
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
   const q = query(collection(db, 'users'), where('marketingOptIn', '==', true));
   const snap = await getDocs(q);
-  return snap.docs.map(doc => doc.data() as UserProfile);
+  return snap.docs.map((doc: any) => doc.data() as UserProfile);
 };

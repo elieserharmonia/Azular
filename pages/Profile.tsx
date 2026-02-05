@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../App';
 import { firebaseEnabled } from '../lib/firebase';
@@ -84,7 +83,8 @@ const Profile: React.FC = () => {
     setIsSaving(true);
     
     try {
-      const { serverTimestamp } = await import('firebase/firestore');
+      // Fix: cast dynamic firestore import to any
+      const { serverTimestamp } = (await import('firebase/firestore')) as any;
       
       const payload: any = {
         fullName: fullName.trim(),

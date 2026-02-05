@@ -1,4 +1,3 @@
-
 // src/services/firestoreClient.ts
 import { app, firebaseEnabled } from "../lib/firebase";
 
@@ -14,8 +13,8 @@ export async function getDb() {
 
   if (dbInstance) return dbInstance;
 
-  // Import dinâmico evita erros de registro de componente no boot
-  const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } = await import("firebase/firestore");
+  // Fix: cast dynamic firestore import to any to resolve property access errors
+  const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } = (await import("firebase/firestore")) as any;
   
   dbInstance = initializeFirestore(app, {
     localCache: persistentLocalCache({

@@ -58,7 +58,8 @@ const CategoriesPage: React.FC = () => {
           alert("Exclusão não disponível em modo local simplificado nesta tela.");
         } else {
           const { getDb } = await import('../services/firestoreClient');
-          const { deleteDoc, doc } = await import('firebase/firestore');
+          // Fix: cast dynamic firestore import to any
+          const { deleteDoc, doc } = (await import('firebase/firestore')) as any;
           const db = await getDb();
           await deleteDoc(doc(db, 'categories', id));
           load();

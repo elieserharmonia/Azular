@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
@@ -6,22 +6,18 @@ import {
   CalendarRange, 
   HeartPulse, 
   User,
-  LayoutGrid,
-  CreditCard,
-  TrendingUp,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  CloudOff
 } from 'lucide-react';
 import { useAuth } from '../App';
 import PWAStatus from './PWAStatus';
 
 const Layout: React.FC = () => {
-  const { userProfile } = useAuth();
+  const { userProfile, isPreview } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Itens da navegação principal atualizados: Provisão -> Previsão
   const navItems = [
     { to: '/app/dashboard', icon: <Home size={24} />, label: 'Início' },
     { to: '/app/transactions', icon: <PlusCircle size={24} />, label: 'Lançar' },
@@ -34,8 +30,15 @@ const Layout: React.FC = () => {
     <div className="min-h-screen flex flex-col md:flex-row transition-colors duration-300 dark:bg-slate-950">
       <PWAStatus />
 
+      {/* Banner Preview */}
+      {isPreview && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 flex items-center justify-center gap-2">
+          <CloudOff size={12} /> Modo Demonstração (Dados Locais)
+        </div>
+      )}
+
       {/* Sidebar Desktop */}
-      <aside className={`hidden md:flex flex-col bg-white dark:bg-slate-900 border-r border-blue-50 dark:border-slate-800 transition-all duration-300 fixed h-full z-50 ${isSidebarOpen ? 'w-72' : 'w-20'}`}>
+      <aside className={`hidden md:flex flex-col bg-white dark:bg-slate-900 border-r border-blue-50 dark:border-slate-800 transition-all duration-300 fixed h-full z-50 ${isSidebarOpen ? 'w-72' : 'w-20'} ${isPreview ? 'pt-6' : ''}`}>
         <div className="p-6 flex items-center justify-between">
           {isSidebarOpen && <span className="text-2xl font-black text-blue-600 tracking-tighter uppercase">Azular</span>}
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-slate-400 hover:text-blue-600">
@@ -70,7 +73,9 @@ const Layout: React.FC = () => {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-black truncate text-slate-900 dark:text-white uppercase">{userProfile?.displayName || 'Usuário'}</p>
-                <p className="text-[9px] font-bold text-blue-400 uppercase">Membro Azular</p>
+                <p className="text-[9px] font-bold text-blue-400 uppercase">
+                  {isPreview ? 'Visitante Demo' : 'Membro Azular'}
+                </p>
               </div>
             </div>
           </div>
@@ -78,13 +83,13 @@ const Layout: React.FC = () => {
       </aside>
 
       {/* Main Content Area */}
-      <main className={`flex-1 flex flex-col min-h-screen pb-24 md:pb-0 transition-all duration-300 ${isSidebarOpen ? 'md:ml-72' : 'md:ml-20'}`}>
-        <div className="flex-1 w-full max-w-4xl mx-auto md:p-8">
+      <main className={`flex-1 flex flex-col min-h-screen pb-24 md:pb-0 transition-all duration-300 ${isSidebarOpen ? 'md:ml-72' : 'md:ml-20'} ${isPreview ? 'pt-6' : ''}`}>
+        <div className="flex-1 w-full max-w-4xl mx-auto md:p-8 p-4">
           <Outlet />
         </div>
       </main>
 
-      {/* Bottom Bar Mobile (Padrão Banco) */}
+      {/* Bottom Bar Mobile */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 flex justify-around items-center px-2 z-50">
         {navItems.map((item) => (
           <NavLink

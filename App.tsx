@@ -1,9 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { firebaseEnabled } from './lib/firebase';
-import { getAuthClient } from './services/authClient';
-import { getDb } from './services/firestoreClient';
-import { isAiStudioPreview } from './utils/env';
+import { isPreview } from './utils/env';
 
 // Pages
 import Login from './pages/Login';
@@ -18,7 +16,6 @@ import Goals from './pages/Goals';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import PrintReport from './pages/PrintReport';
-import RestartPlanPage from './pages/RestartPlan';
 import Diagnostics from './pages/Diagnostics';
 import AdminUsers from './pages/AdminUsers';
 
@@ -54,88 +51,71 @@ const App: React.FC = () => {
   const [user, setUser] = useState<any | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const isPreview = isAiStudioPreview();
+  const isPreviewMode = isPreview();
 
   useEffect(() => {
-    let unsubscribeAuth: () => void = () => {};
-    let unsubscribeProfile: (() => void) | null = null;
+    let unsubscribeAuth: any = null;
 
     const initAuth = async () => {
-      if (isPreview || !firebaseEnabled) {
-        // Mock User para Preview com persistência local simples
-        const savedProfile = localStorage.getItem('azular_preview_profile');
-        setUser({ uid: 'preview-uid', email: 'preview@azular.app' });
-        setUserProfile(savedProfile ? JSON.parse(savedProfile) : { displayName: 'Visitante Preview', currency: 'BRL' });
+      if (isPreviewMode) {
+        // MOCK USER IMEDIATO
+        setUser({ uid: 'preview-user', email: 'demo@azular.app' });
+        setUserProfile({ 
+          displayName: 'Demo', 
+          fullName: 'Usuário Demonstração',
+          currency: 'BRL',
+          uid: 'preview-user' 
+        });
         setLoading(false);
         return;
       }
 
-      try {
-        const auth = await getAuthClient();
-        const db = await getDb();
-        const { onAuthStateChanged } = await import('firebase/auth');
-        const { doc, onSnapshot, setDoc, serverTimestamp, getDoc } = await import('firebase/firestore');
-        
-        unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-          if (unsubscribeProfile) {
-            unsubscribeProfile();
-            unsubscribeProfile = null;
-          }
-
-          setUser(currentUser);
+      if (firebaseEnabled) {
+        try {
+          const { getAuth, onAuthStateChanged } = await import('firebase/auth');
+          // Fix: cast dynamic firestore import to any to avoid "Property does not exist on type { default: ... }" error
+          const { getFirestore, doc, onSnapshot } = (await import('firebase/firestore')) as any;
+          const { app } = await import('./lib/firebase');
           
-          if (currentUser) {
-            // Escuta o perfil em tempo real para que qualquer mudança salve na hora na UI
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            
-            unsubscribeProfile = onSnapshot(userDocRef, async (snapshot) => {
-              if (snapshot.exists()) {
-                setUserProfile(snapshot.data());
-              } else {
-                // Cria perfil padrão se não existir
-                const defaultProfile = {
-                  uid: currentUser.uid,
-                  displayName: currentUser.displayName || 'Usuário',
-                  fullName: currentUser.displayName || '',
-                  email: currentUser.email,
-                  currency: 'BRL',
-                  locale: 'pt-BR',
-                  monthStartDay: 1,
-                  marketingOptIn: false,
-                  createdAt: serverTimestamp()
-                };
-                await setDoc(userDocRef, defaultProfile);
-                setUserProfile(defaultProfile);
-              }
+          const auth = getAuth(app!);
+          const db = getFirestore(app!);
+
+          unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            if (currentUser) {
+              onSnapshot(doc(db, 'users', currentUser.uid), (snapshot: any) => {
+                if (snapshot.exists()) setUserProfile(snapshot.data());
+                setLoading(false);
+              }, () => setLoading(false));
+            } else {
+              setUserProfile(null);
               setLoading(false);
-            }, (error) => {
-              console.error("Profile Subscription Error:", error);
-              setLoading(false);
-            });
-          } else {
-            setUserProfile(null);
-            setLoading(false);
-          }
-        });
-      } catch (e) {
-        console.error("Auth Init Error:", e);
+            }
+          });
+        } catch (e) {
+          console.error("Auth init error:", e);
+          setLoading(false);
+        }
+      } else {
         setLoading(false);
       }
     };
 
     initAuth();
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) (unsubscribeProfile as any)();
-    };
-  }, [isPreview]);
+    return () => unsubscribeAuth && unsubscribeAuth();
+  }, [isPreviewMode]);
 
   return (
     <ToastProvider>
-      <AuthContext.Provider value={{ user, loading, userProfile, isPreview }}>
+      <AuthContext.Provider value={{ user, loading, userProfile, isPreview: isPreviewMode }}>
+        {isPreviewMode && (
+          <div className="bg-amber-500 text-white text-[10px] font-bold py-1 px-4 text-center sticky top-0 z-[999]">
+            Modo Preview — Dados de demonstração (salvos localmente)
+          </div>
+        )}
         <Routes>
-          <Route path="/login" element={(user && !isPreview) ? <Navigate to="/app/dashboard" /> : <Login />} />
-          <Route path="/signup" element={(user && !isPreview) ? <Navigate to="/app/dashboard" /> : <Signup />} />
+          <Route path="/login" element={(user && !isPreviewMode) ? <Navigate to="/app/dashboard" /> : <Login />} />
+          <Route path="/signup" element={(user && !isPreviewMode) ? <Navigate to="/app/dashboard" /> : <Signup />} />
           <Route path="/print" element={<ProtectedRoute><PrintReport /></ProtectedRoute>} />
           <Route path="/diagnostics" element={<ProtectedRoute><Diagnostics /></ProtectedRoute>} />
           
@@ -144,16 +124,14 @@ const App: React.FC = () => {
             <Route path="analysis" element={<Analysis />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="provision" element={<Provision />} />
-            <Route path="restart-plan" element={<RestartPlanPage />} />
+            <Route path="restart-plan" element={<RestartPlan />} />
             <Route path="accounts" element={<Accounts />} />
             <Route path="goals" element={<Goals />} />
             <Route path="reports" element={<Reports />} />
             <Route path="profile" element={<Profile />} />
             <Route index element={<Navigate to="/app/dashboard" />} />
           </Route>
-
           <Route path="/admin/usuarios" element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
-
           <Route path="/" element={<Navigate to="/app/dashboard" />} />
         </Routes>
       </AuthContext.Provider>

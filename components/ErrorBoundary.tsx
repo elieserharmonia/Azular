@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw, Trash2 } from "lucide-react";
 
 interface Props {
@@ -10,7 +10,7 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Use explicit React.Component inheritance to ensure 'props' and 'state' are correctly identified by the TypeScript compiler
+// Fix: Explicitly use React.Component to ensure props and state are correctly inherited and recognized by TypeScript in problematic environments
 class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
@@ -66,9 +66,9 @@ class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public render() {
-    // Fix: access state and props via destructuring to ensure children and error state are recognized correctly
-    const { hasError } = this.state;
-    const { children } = this.props;
+    // Fix: Destructure from this.state and this.props with any casting to avoid "does not exist" errors in specific compiler setups
+    const { hasError } = (this as any).state;
+    const { children } = (this as any).props;
 
     if (hasError) {
       return (
@@ -90,7 +90,7 @@ class ErrorBoundary extends React.Component<Props, State> {
               onClick={() => window.location.reload()}
               className="bg-blue-600 text-white w-full py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
             >
-              <RotateCcw size={18} /> Recarregar Sistema
+              <RotateCcw size={18} /> Recarregar Systema
             </button>
             
             <button 

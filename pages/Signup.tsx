@@ -1,13 +1,14 @@
-
 import React, { useState } from 'react';
 import { firebaseEnabled } from '../lib/firebase';
 import { getAuthClient } from '../services/authClient';
 import { getDb } from '../services/firestoreClient';
 import { Link, useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+// Fix: use wildcard import for firestore to resolve exported member errors in problematic environment
+import * as firestore from 'firebase/firestore';
 import { DEFAULT_CATEGORIES } from '../constants';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { isAiStudioPreview } from '../utils/env';
+// Fix: Use 'isPreview' instead of non-existent 'isAiStudioPreview'
+import { isPreview } from '../utils/env';
 
 /**
  * ⚠️ IMPORTANTE: Auth é lazy por causa do Google AI Studio preview.
@@ -22,14 +23,15 @@ const Signup: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const isPreview = isAiStudioPreview();
+  // Fix: Use 'isPreview' from utils/env and rename local variable to 'isPreviewMode'
+  const isPreviewMode = isPreview();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    if (isPreview) {
+    if (isPreviewMode) {
       setError("Criação de conta desativada no modo preview.");
       setLoading(false);
       return;
@@ -44,21 +46,22 @@ const Signup: React.FC = () => {
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
       const userId = userCred.user.uid;
 
+      const fs = firestore as any;
       const catPromises = DEFAULT_CATEGORIES.map(cat => 
-        addDoc(collection(db, 'categories'), {
+        fs.addDoc(fs.collection(db, 'categories'), {
           ...cat,
           userId,
-          createdAt: serverTimestamp()
+          createdAt: fs.serverTimestamp()
         })
       );
       
-      const accPromise = addDoc(collection(db, 'accounts'), {
+      const accPromise = fs.addDoc(fs.collection(db, 'accounts'), {
         userId,
         name: 'Carteira Principal',
         kind: 'individual',
         initialBalance: 0,
         active: true,
-        createdAt: serverTimestamp()
+        createdAt: fs.serverTimestamp()
       });
 
       await Promise.all([...catPromises, accPromise]);

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { getAccounts } from '../services/db';
@@ -44,7 +43,8 @@ const Accounts: React.FC = () => {
       alert("Criação de contas limitada no modo Preview.");
     } else {
       const db = await getDb();
-      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+      // Fix: cast dynamic firestore import to any
+      const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
       await addDoc(collection(db, 'accounts'), {
         ...formData,
         initialBalance: parseNumericValue(formData.initialBalance),

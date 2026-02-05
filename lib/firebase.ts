@@ -1,7 +1,8 @@
-
-// src/lib/firebase.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { isAiStudioPreview } from "../utils/env";
+import { getAuth } from "firebase/auth";
+// Fix: use wildcard import for firestore to resolve exported member errors
+import * as firestore from "firebase/firestore";
+import { isPreview } from "../utils/env";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAzL6XU1p62YK0Nc5uMwcofHegTwW_Eoig",
@@ -12,13 +13,11 @@ const firebaseConfig = {
   appId: "1:903140061132:web:20611e8ba37400fce0f769",
 };
 
-/**
- * ⚠️ IMPORTANTE: Firebase Auth e Firestore NÃO devem ser importados aqui.
- * Isso impede que o app trave no ambiente restrito do Google AI Studio.
- */
+const isPre = isPreview();
 
-// Singleton App Core
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-
-// Flag central de ambiente
-export const firebaseEnabled = !isAiStudioPreview();
+// Exportações condicionais para evitar crash no Preview
+export const app = isPre ? null : (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig));
+export const auth = isPre ? null : (app ? getAuth(app) : null);
+// Fix: call getFirestore from wildcard import with any casting
+export const db = isPre ? null : (app ? (firestore as any).getFirestore(app) : null);
+export const firebaseEnabled = !isPre && !!app;
