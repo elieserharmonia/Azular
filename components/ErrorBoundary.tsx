@@ -1,5 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode } from "react";
-import { AlertTriangle, RotateCcw, Copy, Trash2 } from "lucide-react";
+import React, { ErrorInfo, ReactNode } from "react";
+import { AlertTriangle, RotateCcw, Trash2 } from "lucide-react";
 
 interface Props {
   children?: ReactNode;
@@ -10,8 +10,8 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Use explicit Component inheritance and a constructor to ensure 'props' is recognized by the compiler
-class ErrorBoundary extends Component<Props, State> {
+// Fix: Use explicit React.Component inheritance to ensure 'props' and 'state' are correctly identified by the TypeScript compiler
+class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null
@@ -66,7 +66,11 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   public render() {
-    if (this.state.hasError) {
+    // Fix: access state and props via destructuring to ensure children and error state are recognized correctly
+    const { hasError } = this.state;
+    const { children } = this.props;
+
+    if (hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFF] p-8 text-center">
           <div className="w-20 h-20 bg-red-100 text-red-600 rounded-[2rem] flex items-center justify-center mb-8">
@@ -100,8 +104,7 @@ class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    // Fix: access children from this.props which is now correctly inherited
-    return this.props.children || null;
+    return children || null;
   }
 }
 

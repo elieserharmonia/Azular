@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -20,7 +19,7 @@
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     
-    <!-- Tailwind Play CDN (Corrige a formatação no Preview) -->
+    <!-- Tailwind Play CDN (Somente para desenvolvimento local/preview rápido, o build final usa PostCSS) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -48,45 +47,6 @@
             }
         }
     </script>
-
-    <style type="text/tailwindcss">
-        @layer base {
-            body { 
-                @apply bg-[#F4F7FE] text-slate-900 font-sans;
-                margin: 0;
-                overscroll-behavior-y: none;
-                -webkit-tap-highlight-color: transparent;
-            }
-        }
-
-        @layer components {
-            .bank-header-gradient {
-                background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
-            }
-
-            .animate-slide-up {
-                animation: slideUp 0.5s ease-out forwards;
-            }
-        }
-
-        @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        #boot-spinner {
-            width: 40px; height: 40px; border: 4px solid #f3f3f3; 
-            border-top: 4px solid #2563eb; border-radius: 50%; 
-            animation: spin 1s linear infinite; margin-bottom: 20px;
-        }
-
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        .boot-btn { padding: 12px 20px; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; font-weight: bold; cursor: pointer; margin-top: 10px; display: none; }
-        .diag-box { display: none; background: #1e293b; color: #94a3b8; padding: 15px; border-radius: 12px; margin-top: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; text-align: left; max-width: 100%; overflow-x: auto; }
-    </style>
     
     <script>
         window.process = { env: { NODE_ENV: 'production' } };
@@ -114,10 +74,10 @@
 </head>
 <body>
     <div id="root">
-        <div id="boot-ui" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; background: #F4F7FE;">
+        <div id="boot-ui" class="flex flex-col items-center justify-center h-screen text-center p-5 bg-[#F4F7FE]">
             <div id="boot-spinner"></div>
-            <h1 style="font-weight: 900; font-size: 24px; color: #1e293b; margin: 0; letter-spacing: -1px;">AZULAR</h1>
-            <p id="boot-msg" style="color: #64748b; font-weight: 500; margin-top: 10px; font-size: 14px;">Iniciando sistema seguro...</p>
+            <h1 class="font-black text-2xl text-[#1e293b] m-0 tracking-tighter">AZULAR</h1>
+            <p id="boot-msg" class="text-[#64748b] font-medium mt-2.5 text-sm">Iniciando sistema seguro...</p>
             
             <button id="boot-diag-btn" class="boot-btn">Ver Diagnóstico</button>
             <div id="boot-diag-box" class="diag-box"></div>
