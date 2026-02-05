@@ -1,9 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
-import { getCategories } from '../services/db';
-import { getDb } from '../services/firestoreClient';
-import { firebaseEnabled } from '../lib/firebase';
+import { getCategories, createCategory } from '../services/db';
 import { Category } from '../types';
 import { Plus, Trash2, Tags, X } from 'lucide-react';
 
@@ -39,26 +36,15 @@ const CategoriesPage: React.FC = () => {
     
     setIsSaving(true);
     try {
-      if (!firebaseEnabled) {
-        // Fallback para modo Preview já tratado em getCategories/db.ts
-        const { createCategory } = await import('../services/db');
-        await createCategory(user.uid, formData.name, formData.direction);
-      } else {
-        const db = await getDb();
-        const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
-        await addDoc(collection(db, 'categories'), {
-          ...formData,
-          userId: user!.uid,
-          createdAt: serverTimestamp()
-        });
-      }
+      // Usamos o serviço centralizado que já trata modo Preview e Firebase
+      await createCategory(user.uid, formData.name, formData.direction);
       
       setFormData({ name: '', direction: 'debit' });
       setShowModal(false);
       load();
     } catch (err: any) {
       console.error("createCategory error:", err);
-      alert("Erro ao salvar categoria: " + err.message);
+      alert("Erro ao salvar categoria: " + (err.message || "Erro desconhecido"));
     } finally {
       setIsSaving(false);
     }
@@ -67,12 +53,13 @@ const CategoriesPage: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm("Deseja excluir esta categoria?")) {
       try {
+        const { firebaseEnabled } = await import('../lib/firebase');
         if (!firebaseEnabled) {
-          // Implementação local rápida se necessário, ou via db.ts
           alert("Exclusão não disponível em modo local simplificado nesta tela.");
         } else {
-          const db = await getDb();
+          const { getDb } = await import('../services/firestoreClient');
           const { deleteDoc, doc } = await import('firebase/firestore');
+          const db = await getDb();
           await deleteDoc(doc(db, 'categories', id));
           load();
         }
@@ -127,7 +114,7 @@ const CategoriesPage: React.FC = () => {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl p-10" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-10">
               <h3 className="text-2xl font-black uppercase tracking-tighter">Cadastrar Categoria</h3>

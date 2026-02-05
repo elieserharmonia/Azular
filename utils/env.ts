@@ -1,4 +1,6 @@
 // src/utils/env.ts
+export const BUILD_ID = "2025.02.21.01"; // Formato: AAAA.MM.DD.REV
+
 export function isAiStudioPreview(): boolean {
   if (typeof window === "undefined") return false;
 

@@ -1,151 +1,143 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
-import { getTransactions, addTransaction, updateTransaction, getAccounts, getCategories, deleteTransaction } from '../services/db';
+import { getTransactions, addTransaction, updateTransaction, getAccounts, deleteTransaction, getCategories } from '../services/db';
 import { Transaction, Account, Category } from '../types';
 import { formatCurrency, getCurrentMonth, getMonthName, getTodayDate, addMonthsToMonthKey } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
-import { getPreviousMonth } from '../utils/date';
 import { useToast } from '../context/ToastContext';
+import { firebaseEnabled } from '../lib/firebase';
 import { 
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  ComposedChart, Line, Bar
-} from 'recharts';
-import { 
-  Waves, Target, Calendar, Plus, RefreshCw, AlertCircle, X, Edit3, Trash2, ArrowRight, History, CalendarRange, Layers, Clock, Loader2
+  CalendarRange, Plus, RefreshCw, X, Edit3, Trash2, History, Tags, ChevronLeft, ChevronRight, Calendar as CalendarIcon
 } from 'lucide-react';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
-// Obtain firestore instance using getDb from services
+import { collection, serverTimestamp, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { getDb } from '../services/firestoreClient';
-import ChartShell from '../components/ChartShell';
-import SimpleBars from '../components/SimpleBars';
 import BannerAd from '../components/BannerAd';
 import CategorySelect from '../components/CategorySelect';
-
-const INITIAL_PROVISION_STATE = (): Partial<Transaction> => ({
-  type: 'debit',
-  description: '',
-  plannedAmount: 0,
-  amount: 0,
-  status: 'planned',
-  competenceMonth: getCurrentMonth(),
-  dueDate: getTodayDate(),
-  isFixed: true,
-  recurrence: { 
-    enabled: true, 
-    frequency: 'monthly',
-    interval: 1,
-    startMonth: getCurrentMonth(),
-    endMonth: null,
-    parentId: null
-  }
-});
 
 const Provision: React.FC = () => {
   const { user } = useAuth();
   const { notifySuccess, notifyError, notifyInfo } = useToast();
+  
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   const [showProvisionModal, setShowProvisionModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
-  const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_PROVISION_STATE());
+  const [formData, setFormData] = useState<Partial<Transaction>>({});
 
-  const [durationMode, setDurationMode] = useState<'infinite' | 'fixed_months' | 'until_date'>('infinite');
+  const [durationMode, setDurationMode] = useState<'infinite' | 'fixed_months'>('infinite');
   const [durationMonths, setDurationMonths] = useState(12);
-
   const [showPropagationModal, setShowPropagationModal] = useState(false);
   const [isProcessingPropagation, setIsProcessingPropagation] = useState(false);
 
-  // Estado de erro de validação
-  const [categoryError, setCategoryError] = useState('');
+  const tableMonths = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => `${selectedYear}-${String(i + 1).padStart(2, '0')}`);
+  }, [selectedYear]);
 
   useEffect(() => {
-    if (!user) return;
-    loadData();
+    if (user) loadData();
   }, [user]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [txs, accs] = await Promise.all([
-        getTransactions(user!.uid),
-        getAccounts(user!.uid)
+      const [txs, accs, cats] = await Promise.all([
+        getTransactions(user!.uid), 
+        getAccounts(user!.uid),
+        getCategories(user!.uid)
       ]);
       setTransactions(txs);
       setAccounts(accs);
-    } catch (err) {
-      notifyError("Erro ao carregar dados.");
+      setCategories(cats);
     } finally {
       setLoading(false);
     }
   };
 
-  const provisionedItems = useMemo(() => {
-    return transactions.filter(t => t.status === 'planned' || t.isFixed);
-  }, [transactions]);
-
-  const projectionData = useMemo(() => {
-    if (loading) return [];
-    const months: Record<string, any> = {};
-    const now = new Date();
+  const tableData = useMemo(() => {
+    const plannedTxs = transactions.filter(t => (t.status === 'planned' || t.isFixed));
     
-    for (let i = -6; i <= 24; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      months[key] = { name: getMonthName(key).split(' de ')[0], plannedIncome: 0, plannedExpense: 0, key };
-    }
+    const firstVisibleMonth = tableMonths[0];
+    const pastTxs = plannedTxs.filter(t => t.competenceMonth < firstVisibleMonth);
+    let initialAccumulated = pastTxs.reduce((acc, t) => {
+      const val = parseNumericValue(t.plannedAmount || t.amount);
+      return t.type === 'credit' ? acc + val : acc - val;
+    }, 0);
 
-    transactions.forEach(t => {
-      const m = t.competenceMonth;
-      if (months[m]) {
-        const val = parseNumericValue(t.plannedAmount || t.amount);
-        if (t.type === 'credit') months[m].plannedIncome += val;
-        else months[m].plannedExpense += val;
-      }
+    const buildGroupedData = (type: 'credit' | 'debit') => {
+      const list = plannedTxs.filter(t => t.type === type);
+      const catIds = Array.from(new Set(list.map(t => t.categoryId)));
+      
+      return catIds.map(catId => {
+        const catName = categories.find(c => c.id === catId)?.name || 'Outros';
+        const catItems = list.filter(t => t.categoryId === catId);
+        const descriptions = Array.from(new Set(catItems.map(t => t.description)));
+        
+        const rows = descriptions.map(desc => {
+          const values: Record<string, number> = {};
+          tableMonths.forEach(m => {
+            // Unifica valores caso a descrição se repita
+            const items = catItems.filter(t => t.description === desc && t.competenceMonth === m);
+            values[m] = items.reduce((sum, it) => sum + parseNumericValue(it.plannedAmount || it.amount), 0);
+          });
+          return { name: desc, values };
+        }).filter(r => Object.values(r.values).some(v => v > 0));
+
+        const catTotals: Record<string, number> = {};
+        tableMonths.forEach(m => {
+          catTotals[m] = rows.reduce((sum, r) => sum + r.values[m], 0);
+        });
+
+        return { catId, catName, rows, catTotals };
+      }).filter(g => g.rows.length > 0);
+    };
+
+    const entryGroups = buildGroupedData('credit');
+    const exitGroups = buildGroupedData('debit');
+
+    const totalsEntry: Record<string, number> = {};
+    const totalsExit: Record<string, number> = {};
+    const netResult: Record<string, number> = {};
+    const accumulated: Record<string, number> = {};
+
+    let runningSum = initialAccumulated;
+    tableMonths.forEach(m => {
+      totalsEntry[m] = entryGroups.reduce((acc, g) => acc + g.catTotals[m], 0);
+      totalsExit[m] = exitGroups.reduce((acc, g) => acc + g.catTotals[m], 0);
+      netResult[m] = totalsEntry[m] - totalsExit[m];
+      runningSum += netResult[m];
+      accumulated[m] = runningSum;
     });
 
-    return Object.values(months).sort((a: any, b: any) => a.key.localeCompare(b.key));
-  }, [transactions, loading]);
+    return { entryGroups, exitGroups, totalsEntry, totalsExit, netResult, accumulated, initialAccumulated };
+  }, [transactions, tableMonths, categories]);
 
-  const handleOpenEdit = (item: Transaction) => {
-    setEditingItem(item);
-    setFormData(item);
-    if (!item.recurrence.endMonth) setDurationMode('infinite');
-    else setDurationMode('until_date');
-    setShowProvisionModal(true);
-    setCategoryError('');
+  const handleOpenEdit = (description: string, type: 'credit' | 'debit') => {
+    const item = transactions.find(t => t.description === description && t.type === type && (t.status === 'planned' || t.isFixed));
+    if (item) {
+      setEditingItem(item);
+      setFormData(item);
+      setDurationMode(item.recurrence.endMonth ? 'fixed_months' : 'infinite');
+      setShowProvisionModal(true);
+    }
   };
 
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCategoryError('');
-
-    if (!user || !formData.accountId) {
-      notifyInfo("Selecione a Conta.");
-      return;
-    }
-
-    if (!formData.categoryId) {
-      setCategoryError("Escolha uma categoria ou crie uma nova.");
-      return;
-    }
+    if (!user || !formData.accountId || !formData.categoryId) return notifyInfo("Dados incompletos.");
 
     let finalEndMonth: string | null = null;
-    if (durationMode === 'fixed_months') {
-      finalEndMonth = addMonthsToMonthKey(formData.competenceMonth!, durationMonths - 1);
-    } else if (durationMode === 'until_date') {
-      finalEndMonth = formData.recurrence?.endMonth || null;
-    }
+    if (durationMode === 'fixed_months') finalEndMonth = addMonthsToMonthKey(formData.competenceMonth!, durationMonths - 1);
 
     const updatedFormData = {
       ...formData,
       plannedAmount: parseNumericValue(formData.plannedAmount),
-      recurrence: {
-        ...formData.recurrence!,
-        endMonth: finalEndMonth
-      }
+      recurrence: { ...formData.recurrence!, endMonth: finalEndMonth }
     };
 
     if (editingItem) {
@@ -159,177 +151,162 @@ const Provision: React.FC = () => {
         loadData();
       }
     } else {
-      try {
-        const parentId = updatedFormData.isFixed ? crypto.randomUUID() : null;
-        await addTransaction({
-          ...updatedFormData as Transaction,
-          userId: user.uid,
-          amount: 0,
-          status: 'planned',
-          recurrence: {
-            ...updatedFormData.recurrence!,
-            parentId: parentId
-          }
+      const parentId = updatedFormData.isFixed ? crypto.randomUUID() : null;
+      // Para previsões fixas, geramos até o fim da projeção de 35 anos se for infinito
+      const count = updatedFormData.isFixed ? 420 : 1;
+      for (let i = 0; i < count; i++) {
+        const m = addMonthsToMonthKey(updatedFormData.competenceMonth!, i);
+        if (finalEndMonth && m > finalEndMonth) break;
+        if (m > '2060-12') break;
+        
+        await addTransaction({ 
+          ...updatedFormData as Transaction, 
+          userId: user.uid, 
+          amount: 0, 
+          status: 'planned', 
+          competenceMonth: m, 
+          recurrence: { ...updatedFormData.recurrence!, parentId } 
         });
-        notifySuccess("Planejamento fixado.");
-        closeAllModals();
-        loadData();
-      } catch (err) {
-        notifyError("Erro ao salvar provisão.");
       }
+      notifySuccess("Previsão lançada com sucesso.");
+      closeAllModals();
+      loadData();
     }
-  };
-
-  const closeAllModals = () => {
-    setShowProvisionModal(false);
-    setShowPropagationModal(false);
-    setEditingItem(null);
-    setFormData(INITIAL_PROVISION_STATE());
-    setDurationMode('infinite');
-    setCategoryError('');
   };
 
   const handlePropagationSelection = async (scope: 'single' | 'all' | 'future') => {
     if (!user || !editingItem || isProcessingPropagation) return;
     setIsProcessingPropagation(true);
-
+    const updates = { 
+      plannedAmount: parseNumericValue(formData.plannedAmount), 
+      description: formData.description, 
+      accountId: formData.accountId, 
+      categoryId: formData.categoryId 
+    };
+    
     try {
-      // FIX: Accessing Firestore instance asynchronously to avoid initialization errors in preview environments
-      const db = await getDb();
-      const batch = writeBatch(db);
-      const cleanUpdates = {
-        plannedAmount: parseNumericValue(formData.plannedAmount),
-        description: formData.description || editingItem.description,
-        accountId: formData.accountId || editingItem.accountId,
-        categoryId: formData.categoryId || editingItem.categoryId,
-        updatedAt: serverTimestamp()
-      };
-
-      if (scope === 'single') {
-        batch.update(doc(db, 'transactions', editingItem.id!), cleanUpdates);
-      } 
-      else if (scope === 'future') {
-        const prevMonth = getPreviousMonth(editingItem.competenceMonth);
-        const q = query(
-          collection(db, 'transactions'), 
-          where('recurrence.parentId', '==', editingItem.recurrence.parentId),
-          where('userId', '==', user.uid)
-        );
-        const snap = await getDocs(q);
-        const newParentId = crypto.randomUUID();
-
-        snap.docs.forEach(d => {
-          const data = d.data();
-          if (data.competenceMonth < editingItem.competenceMonth) {
-            batch.update(d.ref, { 'recurrence.endMonth': prevMonth });
-          } else {
-            batch.update(d.ref, { 
-              ...cleanUpdates, 
-              'recurrence.parentId': newParentId,
-              'recurrence.startMonth': editingItem.competenceMonth,
-              'recurrence.endMonth': formData.recurrence?.endMonth || null
-            });
-          }
+      if (!firebaseEnabled) {
+        const docs = JSON.parse(localStorage.getItem('azular_demo_transactions') || '[]');
+        let updated = docs.map((d: any) => {
+          const isSameSeries = d.recurrence?.parentId === editingItem.recurrence.parentId;
+          if (scope === 'all' && isSameSeries) return {...d, ...updates};
+          if (scope === 'future' && isSameSeries && d.competenceMonth >= editingItem.competenceMonth) return {...d, ...updates};
+          if (scope === 'single' && d.id === editingItem.id) return {...d, ...updates};
+          return d;
         });
-      } 
-      else if (scope === 'all') {
-        const q = query(
-          collection(db, 'transactions'), 
-          where('recurrence.parentId', '==', editingItem.recurrence.parentId),
-          where('userId', '==', user.uid)
-        );
+        localStorage.setItem('azular_demo_transactions', JSON.stringify(updated));
+      } else {
+        const db = await getDb();
+        const batch = writeBatch(db);
+        const q = query(collection(db, 'transactions'), where('recurrence.parentId', '==', editingItem.recurrence.parentId), where('userId', '==', user.uid));
         const snap = await getDocs(q);
-        snap.docs.forEach(d => batch.update(d.ref, {
-          ...cleanUpdates,
-          'recurrence.endMonth': formData.recurrence?.endMonth || null
-        }));
+        snap.docs.forEach(d => {
+            const data = d.data();
+            if (scope === 'all' || (scope === 'future' && data.competenceMonth >= editingItem.competenceMonth) || (scope === 'single' && d.id === editingItem.id)) {
+                batch.update(d.ref, { ...updates, updatedAt: serverTimestamp() });
+            }
+        });
+        await batch.commit();
       }
-
-      await batch.commit();
-      notifySuccess("Série atualizada com sucesso.");
+      notifySuccess("Série atualizada.");
       closeAllModals();
       loadData();
-    } catch (err) {
-      console.error("Propagation Error:", err);
-      notifyError("Não consegui aplicar a alteração em massa.");
-    } finally {
-      setIsProcessingPropagation(false);
-    }
+    } catch (e) { notifyError("Erro ao propagar."); }
+    finally { setIsProcessingPropagation(false); }
   };
 
-  const handleDeleteItem = async (id: string) => {
-    if (window.confirm("Remover do seu plano?")) {
-      try {
-        await deleteTransaction(id);
-        notifySuccess("Item removido.");
+  const closeAllModals = () => { setShowProvisionModal(false); setShowPropagationModal(false); setEditingItem(null); setFormData({}); };
+
+  const handleDeleteSeries = async (description: string, type: Transaction['type']) => {
+    if (confirm(`Remover "${description}" de todos os meses?`)) {
+        const items = transactions.filter(t => t.description === description && t.type === type && (t.status === 'planned' || t.isFixed));
+        for (const it of items) await deleteTransaction(it.id!);
+        notifySuccess("Removido.");
         loadData();
-      } catch (err) {
-        notifyError("Erro ao excluir.");
-      }
     }
   };
 
   return (
-    <div className="space-y-10 pb-24">
-      <header className="flex flex-col md:flex-row justify-between items-end gap-6">
+    <div className="space-y-6 pb-32">
+      <header className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Provisão</h2>
-          <p className="text-blue-500 font-bold uppercase text-[10px] tracking-widest mt-2 flex items-center gap-2">
-            <CalendarRange size={14} /> Ciclos de Vida Financeira
+          <h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">Previsão</h2>
+          <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2 flex items-center gap-2">
+            <CalendarRange size={14} /> Ciclo de Vida (até 2060)
           </p>
         </div>
-        <button 
-          onClick={() => setShowProvisionModal(true)}
-          className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-black uppercase text-xs tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all"
-        >
-          + Novo Planejamento
-        </button>
+        
+        <div className="flex items-center gap-3 bg-white p-2 rounded-[1.5rem] shadow-sm border border-blue-50">
+          <button onClick={() => setSelectedYear(y => Math.max(2024, y - 1))} className="p-2 hover:bg-blue-50 rounded-xl transition-all"><ChevronLeft size={20} /></button>
+          <div className="flex items-center gap-2 px-4">
+            <CalendarIcon size={16} className="text-blue-600" />
+            <span className="text-sm font-black text-gray-900">{selectedYear}</span>
+          </div>
+          <button onClick={() => setSelectedYear(y => Math.min(2060, y + 1))} className="p-2 hover:bg-blue-50 rounded-xl transition-all"><ChevronRight size={20} /></button>
+          <button onClick={() => { setFormData({ type: 'debit', competenceMonth: getCurrentMonth(), isFixed: true, recurrence: { enabled: true, frequency: 'monthly', interval: 1, startMonth: getCurrentMonth(), endMonth: null, parentId: null } }); setShowProvisionModal(true); }} className="ml-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md">+ Novo Plano</button>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm">
-            <h3 className="font-black uppercase text-xs text-gray-400 mb-6 flex items-center gap-2">
-              <Layers size={16} className="text-blue-600" /> Séries Ativas
-            </h3>
-            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
-              {provisionedItems.map(item => (
-                <div key={item.id} className="p-5 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-blue-100 transition-all group">
-                   <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-black uppercase text-gray-800">{item.description}</span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onClick={() => handleOpenEdit(item)} className="p-1.5 text-blue-600 hover:bg-white rounded-lg"><Edit3 size={14} /></button>
-                         <button onClick={() => handleDeleteItem(item.id!)} className="p-1.5 text-red-400 hover:bg-white rounded-lg"><Trash2 size={14} /></button>
-                      </div>
-                   </div>
-                   <div className="flex justify-between items-end">
-                      <div className="text-xl font-black text-gray-900 tracking-tighter">{formatCurrency(item.plannedAmount)}</div>
-                      <div className="text-right">
-                         <span className="text-[8px] font-black uppercase text-blue-400 block">
-                           {item.recurrence.endMonth ? `Até ${item.recurrence.endMonth}` : 'Sem fim'}
-                         </span>
-                         <span className="text-[8px] font-bold text-gray-300 uppercase">{item.competenceMonth}</span>
-                      </div>
-                   </div>
-                </div>
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border-2 border-blue-50 dark:border-slate-800 shadow-xl overflow-hidden relative">
+        <div className="overflow-x-auto no-scrollbar" ref={scrollContainerRef}>
+          <table className="w-full text-left border-collapse min-w-[1500px]">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-slate-800/50">
+                <th className="sticky left-0 z-30 bg-gray-50 dark:bg-slate-800 px-6 py-5 text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-r border-blue-50 min-w-[280px]">DESCRITIVO</th>
+                {tableMonths.map(m => (
+                  <th key={m} className={`px-4 py-5 text-[10px] font-black uppercase tracking-widest text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white shadow-inner' : 'text-gray-600 dark:text-gray-300'}`}>
+                    {getMonthName(m).split(' de ')[0].toUpperCase()}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50 dark:divide-slate-800">
+              <tr className="bg-emerald-600 text-white font-black"><td className="sticky left-0 z-20 bg-emerald-600 px-6 py-2 text-[10px] uppercase tracking-[0.2em] border-r border-emerald-500">Fluxos de Entrada</td>{tableMonths.map(m => <td key={m} className="px-4 py-2 text-center text-[8px] opacity-60">PROJETADO</td>)}</tr>
+              
+              {tableData.entryGroups.map(group => (
+                <React.Fragment key={group.catId}>
+                  <tr className="bg-emerald-50/40"><td className="sticky left-0 z-20 bg-[#F4FCF9] dark:bg-slate-800 px-6 py-2 border-r border-emerald-100 flex items-center gap-2"><Tags size={12} className="text-emerald-500" /><span className="text-[9px] font-black text-emerald-700 uppercase">{group.catName}</span></td>{tableMonths.map(m => <td key={m} className="px-4 py-2 text-center text-[10px] font-black text-emerald-700">{formatCurrency(group.catTotals[m])}</td>)}</tr>
+                  {group.rows.map(row => (
+                    <tr key={row.name} className="group hover:bg-emerald-50/10 transition-colors">
+                      <td className="sticky left-0 z-20 bg-white group-hover:bg-emerald-50/10 dark:bg-slate-900 px-10 py-3 border-r border-blue-50 dark:border-slate-800 flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase">{row.name}</span>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => handleOpenEdit(row.name, 'credit')} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit3 size={12} /></button><button onClick={() => handleDeleteSeries(row.name, 'credit')} className="p-1 text-red-400 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div>
+                      </td>
+                      {tableMonths.map(m => <td key={m} className="px-4 py-3 text-center text-[10px] text-gray-400 font-medium">{row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}</td>)}
+                    </tr>
+                  ))}
+                </React.Fragment>
               ))}
-            </div>
-          </div>
-        </div>
+              <tr className="bg-emerald-50 font-black"><td className="sticky left-0 z-20 bg-emerald-50 px-6 py-3 text-[9px] uppercase text-emerald-800 border-r border-blue-50">Total Entradas</td>{tableMonths.map(m => <td key={m} className="px-4 py-3 text-center text-xs text-emerald-800">{formatCurrency(tableData.totalsEntry[m])}</td>)}</tr>
 
-        <div className="lg:col-span-2">
-           <ChartShell title="Visão de Futuro (24 Meses)" hasData={projectionData.length > 0} heightClass="h-[400px]" fallback={<SimpleBars data={projectionData} />}>
-              <ResponsiveContainer width="100%" height="100%">
-                 <ComposedChart data={projectionData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f7ff" />
-                    <XAxis dataKey="name" tick={{fontSize: 9, fontWeight: 'black'}} axisLine={false} tickLine={false} />
-                    <YAxis tick={{fontSize: 9, fontWeight: 'black'}} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} />
-                    <Bar dataKey="plannedIncome" name="Entradas" fill="#60A5FA" radius={[4, 4, 0, 0]} barSize={10} />
-                    <Bar dataKey="plannedExpense" name="Saídas" fill="#F87171" radius={[4, 4, 0, 0]} barSize={10} />
-                 </ComposedChart>
-              </ResponsiveContainer>
-           </ChartShell>
+              <tr className="bg-blue-600 text-white font-black"><td className="sticky left-0 z-20 bg-blue-600 px-6 py-2 text-[10px] uppercase tracking-[0.2em] border-r border-blue-500">Fluxos de Saída</td>{tableMonths.map(m => <td key={m} className="px-4 py-2 text-center text-[8px] opacity-60">PROJETADO</td>)}</tr>
+              
+              {tableData.exitGroups.map(group => (
+                <React.Fragment key={group.catId}>
+                  <tr className="bg-blue-50/40"><td className="sticky left-0 z-20 bg-[#F5F8FF] dark:bg-slate-800 px-6 py-2 border-r border-blue-100 flex items-center gap-2"><Tags size={12} className="text-blue-500" /><span className="text-[9px] font-black text-blue-700 uppercase">{group.catName}</span></td>{tableMonths.map(m => <td key={m} className="px-4 py-2 text-center text-[10px] font-black text-blue-700">{formatCurrency(group.catTotals[m])}</td>)}</tr>
+                  {group.rows.map(row => (
+                    <tr key={row.name} className="group hover:bg-blue-50/10 transition-colors">
+                      <td className="sticky left-0 z-20 bg-white group-hover:bg-blue-50/10 dark:bg-slate-900 px-10 py-3 border-r border-blue-50 flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300 uppercase">{row.name}</span>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => handleOpenEdit(row.name, 'debit')} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit3 size={12} /></button><button onClick={() => handleDeleteSeries(row.name, 'debit')} className="p-1 text-red-400 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div>
+                      </td>
+                      {tableMonths.map(m => <td key={m} className="px-4 py-3 text-center text-[10px] text-gray-400 font-medium">{row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}</td>)}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+              <tr className="bg-blue-50 font-black"><td className="sticky left-0 z-20 bg-blue-50 px-6 py-3 text-[9px] uppercase text-blue-800 border-r border-blue-50">Total Saídas</td>{tableMonths.map(m => <td key={m} className="px-4 py-3 text-center text-xs text-blue-800">{formatCurrency(tableData.totalsExit[m])}</td>)}</tr>
+
+              <tr className="bg-slate-900 text-white font-black">
+                <td className="sticky left-0 z-20 bg-slate-900 px-6 py-5 text-[11px] uppercase tracking-widest border-r border-slate-700">Resultado do Mês</td>
+                {tableMonths.map(m => <td key={m} className={`px-4 py-5 text-center text-sm ${tableData.netResult[m] >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrency(tableData.netResult[m])}</td>)}
+              </tr>
+              <tr className="bg-blue-800 text-white font-black">
+                <td className="sticky left-0 z-20 bg-blue-800 px-6 py-5 text-[11px] uppercase tracking-widest border-r border-blue-700">Acumulado Histórico</td>
+                {tableMonths.map(m => <td key={m} className="px-4 py-5 text-center text-sm">{formatCurrency(tableData.accumulated[m])}</td>)}
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -337,162 +314,37 @@ const Provision: React.FC = () => {
 
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto relative border-2 border-blue-50">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black uppercase tracking-tighter">
-                {editingItem ? 'Editar Plano' : 'Novo Planejamento'}
-              </h3>
-              <button onClick={closeAllModals} className="p-2 hover:bg-gray-100 rounded-full"><X size={32} /></button>
-            </div>
-
+          <div className="bg-white dark:bg-slate-900 rounded-[3rem] w-full max-w-lg shadow-2xl p-10 max-h-[90vh] overflow-y-auto border-2 border-blue-50">
+            <div className="flex justify-between items-center mb-8"><h3 className="text-2xl font-black uppercase tracking-tighter">Planejar Lançamento</h3><button onClick={closeAllModals}><X size={32} /></button></div>
             <form onSubmit={handleSaveProvision} className="space-y-6">
               <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
-                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada</button>
-                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-4 font-black uppercase rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-red-500 shadow-md' : 'text-gray-400'}`}>Saída</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}>Saída</button>
               </div>
-
-              <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Descrição</label>
-                <input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Aluguel, Salário..." />
-              </div>
-
+              <div><label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Descrição</label><input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
               <div className="grid grid-cols-2 gap-8">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-blue-600 block mb-2 tracking-widest">Valor Planejado</label>
-                  <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-600 pb-2 outline-none" value={formData.plannedAmount === 0 ? '' : formData.plannedAmount} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Inicia em</label>
-                  <input required type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.competenceMonth} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
-                </div>
+                <div><label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Valor Planejado</label><input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600" value={formData.plannedAmount === 0 ? '' : (formData.plannedAmount || '')} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} placeholder="0,00" /></div>
+                <div><label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Mês de Início</label><input required type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} /></div>
               </div>
-
-              <div className="p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <RefreshCw size={20} className="text-blue-600" />
-                    <span className="text-xs font-black uppercase text-gray-700">Repetir</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={formData.isFixed} onChange={e => setFormData({...formData, isFixed: e.target.checked})} />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-
-                {formData.isFixed && (
-                  <div className="space-y-4 animate-in fade-in duration-300">
-                    <div className="flex flex-col gap-2">
-                       <label className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${durationMode === 'infinite' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent opacity-60'}`}>
-                          <input type="radio" className="hidden" name="dur" checked={durationMode === 'infinite'} onChange={() => setDurationMode('infinite')} />
-                          <span className="text-[10px] font-black uppercase tracking-widest flex-1">Sem fim (Infinito)</span>
-                       </label>
-                       
-                       <label className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${durationMode === 'fixed_months' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent opacity-60'}`}>
-                          <input type="radio" className="hidden" name="dur" checked={durationMode === 'fixed_months'} onChange={() => setDurationMode('fixed_months')} />
-                          <div className="flex-1 flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase tracking-widest">Por X Meses</span>
-                            {durationMode === 'fixed_months' && (
-                              <input type="number" min="1" max="240" className="w-16 bg-blue-50 text-center font-black rounded-lg py-1" value={durationMonths} onChange={e => setDurationMonths(parseInt(e.target.value))} />
-                            )}
-                          </div>
-                       </label>
-
-                       <label className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer ${durationMode === 'until_date' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent opacity-60'}`}>
-                          <input type="radio" className="hidden" name="dur" checked={durationMode === 'until_date'} onChange={() => setDurationMode('until_date')} />
-                          <div className="flex-1 flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase tracking-widest">Até o Mês</span>
-                            {durationMode === 'until_date' && (
-                              <input type="month" className="bg-blue-50 text-center font-black rounded-lg px-2 py-1 text-[10px]" value={formData.recurrence?.endMonth || ''} onChange={e => setFormData({...formData, recurrence: {...formData.recurrence!, endMonth: e.target.value}})} />
-                            )}
-                          </div>
-                       </label>
-                    </div>
-                  </div>
-                )}
+              <div className="p-6 bg-blue-50 rounded-[2rem] space-y-4">
+                <div className="flex items-center justify-between"><div className="flex items-center gap-3"><RefreshCw size={20} className="text-blue-600" /><span className="text-xs font-black uppercase text-gray-700">Recorrente</span></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={formData.isFixed || false} onChange={e => setFormData({...formData, isFixed: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div></label></div>
+                {formData.isFixed && <div className="space-y-4 pt-4 border-t border-blue-100 flex flex-col gap-2">
+                  <button type="button" onClick={() => setDurationMode('infinite')} className={`p-4 rounded-xl border-2 text-left transition-all ${durationMode === 'infinite' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent text-gray-400'}`}><span className="text-[10px] font-black uppercase tracking-widest">Até 2060 (Ciclo de Vida)</span></button>
+                  <div className={`p-4 rounded-xl border-2 flex items-center justify-between transition-all ${durationMode === 'fixed_months' ? 'bg-white border-blue-600 shadow-sm' : 'border-transparent text-gray-400'}`}><button type="button" onClick={() => setDurationMode('fixed_months')} className="text-[10px] font-black uppercase tracking-widest">Por número de meses</button>{durationMode === 'fixed_months' && <input type="number" className="w-16 bg-blue-50 text-center font-black rounded-lg py-1 outline-none" value={durationMonths} onChange={e => setDurationMonths(parseInt(e.target.value))} />}</div>
+                </div>}
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta</label>
-                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none focus:border-blue-600" value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-                    <option value="">Escolha</option>
-                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                </div>
-                
-                <CategorySelect 
-                  userId={user!.uid}
-                  value={formData.categoryId || ''}
-                  direction={formData.type || 'debit'}
-                  onChange={(id) => {
-                    setFormData({...formData, categoryId: id});
-                    setCategoryError('');
-                  }}
-                  error={categoryError}
-                />
+              <div className="grid grid-cols-2 gap-8">
+                <div><label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta Principal</label><select required className="w-full font-black border-b-4 border-blue-50 bg-transparent outline-none" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}><option value="">Escolha</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+                <CategorySelect userId={user!.uid} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
               </div>
-
-              <button type="submit" className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all active:scale-95">
-                {editingItem ? 'Confirmar Edição' : 'Salvar no Plano'}
-              </button>
+              <button type="submit" className="w-full py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">Salvar Plano</button>
             </form>
-
-            {/* Modal Modesto de Propagação */}
-            {showPropagationModal && (
-              <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 rounded-[3rem] animate-in fade-in duration-300">
-                <div className="w-full max-sm bg-white border-2 border-blue-100 rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-300">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-                    {isProcessingPropagation ? <Loader2 className="animate-spin" size={24} /> : <History size={24} />}
-                  </div>
-                  
-                  <div>
-                    <h4 className="text-lg font-black uppercase tracking-tight text-gray-900">Aplicar alteração</h4>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">
-                      Onde essa mudança deve valer?
-                    </p>
-                  </div>
-
-                  <div className="w-full space-y-2">
-                    <button 
-                      disabled={isProcessingPropagation}
-                      onClick={() => handlePropagationSelection('single')} 
-                      className="w-full bg-gray-50 border border-gray-100 p-4 rounded-2xl flex flex-col items-start hover:border-blue-300 hover:bg-blue-50 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                      <span className="font-black uppercase text-[10px] text-gray-800 leading-none mb-1">Só este mês</span>
-                      <span className="text-[8px] font-bold text-gray-400 uppercase">Ex.: Luz veio diferente</span>
-                    </button>
-
-                    <button 
-                      disabled={isProcessingPropagation}
-                      onClick={() => handlePropagationSelection('future')} 
-                      className="w-full bg-blue-600 text-white p-4 rounded-2xl flex flex-col items-start hover:bg-blue-700 shadow-lg active:scale-95 disabled:opacity-50"
-                    >
-                      <span className="font-black uppercase text-[10px] leading-none mb-1">Deste mês em diante</span>
-                      <span className="text-[8px] font-bold text-blue-100 uppercase">Ex.: Salário aumentou</span>
-                    </button>
-
-                    <button 
-                      disabled={isProcessingPropagation}
-                      onClick={() => handlePropagationSelection('all')} 
-                      className="w-full bg-white border-2 border-gray-100 p-4 rounded-2xl flex flex-col items-start hover:border-gray-300 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                      <span className="font-black uppercase text-[10px] text-gray-800 leading-none mb-1">Todos os meses</span>
-                      <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tight">Corrigir toda a série</span>
-                    </button>
-                  </div>
-
-                  <button 
-                    disabled={isProcessingPropagation}
-                    onClick={() => setShowPropagationModal(false)}
-                    className="text-[9px] font-black uppercase text-gray-300 hover:text-red-400 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
+      )}
+
+      {showPropagationModal && (
+        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[120] flex items-center justify-center p-6"><div className="w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl p-8 flex flex-col items-center text-center space-y-6"><div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><History size={24} /></div><div><h4 className="text-lg font-black uppercase">Atualizar Série</h4><p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">Essa mudança afeta outros meses. Qual o alcance?</p></div><div className="w-full space-y-2"><button onClick={() => handlePropagationSelection('single')} className="w-full bg-gray-50 p-4 rounded-2xl flex flex-col items-start"><span className="font-black uppercase text-[10px]">Só este mês</span></button><button onClick={() => handlePropagationSelection('future')} className="w-full bg-blue-600 text-white p-4 rounded-2xl flex flex-col items-start shadow-lg"><span className="font-black uppercase text-[10px]">Deste mês em diante</span></button><button onClick={() => handlePropagationSelection('all')} className="w-full bg-white border-2 border-gray-100 p-4 rounded-2xl flex flex-col items-start"><span className="font-black uppercase text-[10px]">Toda a série</span></button></div><button onClick={() => setShowPropagationModal(false)} className="text-[9px] font-black uppercase text-gray-300">Cancelar</button></div></div>
       )}
     </div>
   );

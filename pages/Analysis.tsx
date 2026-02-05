@@ -1,14 +1,12 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { getTransactions, getCategories } from '../services/db';
+import { getAiInsights, AiInsight } from '../services/aiInsights';
 import { Transaction, Category } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
-import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
-} from 'recharts';
-import { BrainCircuit, Activity, Lock, Play, Sparkles } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { BrainCircuit, Activity, Lock, Play, Sparkles, Loader2 } from 'lucide-react';
 import ChartShell from '../components/ChartShell';
 import BannerAd from '../components/BannerAd';
 import RewardedAdModal from '../components/RewardedAdModal';
@@ -18,18 +16,38 @@ const Analysis: React.FC = () => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [insights, setInsights] = useState<AiInsight[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingAi, setLoadingAi] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [hasDeepInsights, setHasDeepInsights] = useState(adService.hasBenefit('DEEP_INSIGHTS'));
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([getTransactions(user.uid), getCategories(user.uid)]).then(([txs, cats]) => {
+    loadData();
+  }, [user]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [txs, cats] = await Promise.all([getTransactions(user!.uid), getCategories(user!.uid)]);
       setTransactions(txs);
       setCategories(cats);
+      
+      if (hasDeepInsights) {
+        fetchAiInsights(txs);
+      }
+    } finally {
       setLoading(false);
-    });
-  }, [user]);
+    }
+  };
+
+  const fetchAiInsights = async (txs: Transaction[]) => {
+    setLoadingAi(true);
+    const data = await getAiInsights(txs);
+    setInsights(data);
+    setLoadingAi(false);
+  };
 
   const categoryShare = useMemo(() => {
     const shares: Record<string, number> = {};
@@ -53,6 +71,7 @@ const Analysis: React.FC = () => {
     adService.grantBenefit('DEEP_INSIGHTS');
     setHasDeepInsights(true);
     setShowAdModal(false);
+    fetchAiInsights(transactions);
   };
 
   if (loading) return <div className="p-10 text-center uppercase font-black text-blue-600 animate-pulse">Analisando sua jornada...</div>;
@@ -62,7 +81,7 @@ const Analysis: React.FC = () => {
       <header>
         <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Análise</h2>
         <p className="text-blue-500 font-bold uppercase text-[10px] tracking-widest mt-2 flex items-center gap-2">
-          <Activity size={14} /> Onde seu dinheiro mais circula
+          <Activity size={14} /> Ciclos Financeiros
         </p>
       </header>
 
@@ -70,7 +89,7 @@ const Analysis: React.FC = () => {
         <div className="bg-white p-10 rounded-[2.5rem] border-2 border-blue-50 shadow-sm flex flex-col items-center text-center gap-6 animate-in slide-in-from-top-4">
           <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Lock size={32} /></div>
           <div>
-            <h4 className="font-black uppercase text-xs tracking-widest mb-2">Insights do Guia Azular</h4>
+            <h4 className="font-black uppercase text-xs tracking-widest mb-2">Mentor Azular (IA)</h4>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Apoie o projeto para liberar conselhos da nossa IA por 24h.</p>
           </div>
           <button 
@@ -81,15 +100,26 @@ const Analysis: React.FC = () => {
           </button>
         </div>
       ) : (
-        <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-start gap-6 relative overflow-hidden">
-          <div className="p-3 bg-white/20 rounded-2xl"><BrainCircuit size={28} /></div>
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">Insight Azular</h4>
-              <Sparkles size={12} className="text-blue-200" />
+        <div className="space-y-4">
+          {loadingAi ? (
+            <div className="bg-blue-600/10 p-8 rounded-[2.5rem] flex items-center justify-center gap-4">
+              <Loader2 className="animate-spin text-blue-600" />
+              <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest">IA analisando seus números...</span>
             </div>
-            <p className="text-xl font-bold leading-tight">Um passo de cada vez. Sua organização hoje é o seu sossego de amanhã.</p>
-          </div>
+          ) : (
+            insights.map((insight, idx) => (
+              <div key={idx} className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-start gap-6 relative overflow-hidden animate-in fade-in slide-in-from-left">
+                <div className="p-3 bg-white/20 rounded-2xl"><BrainCircuit size={28} /></div>
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">{insight.badge}</h4>
+                    <Sparkles size={12} className="text-blue-200" />
+                  </div>
+                  <p className="text-xl font-bold leading-tight">{insight.message}</p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 
@@ -115,7 +145,6 @@ const Analysis: React.FC = () => {
                       }}
                     />
                   </div>
-                  <span className="text-[8px] font-bold text-gray-400 uppercase">{cat.percent.toFixed(1)}% do total</span>
                 </div>
               ))}
             </div>
@@ -145,7 +174,7 @@ const Analysis: React.FC = () => {
 
       {showAdModal && (
         <RewardedAdModal 
-          benefitName="Insights Profundos IA"
+          benefitName="Mentor Azular (IA)"
           onComplete={handleAdComplete}
           onCancel={() => setShowAdModal(false)}
         />

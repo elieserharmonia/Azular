@@ -4,48 +4,45 @@
 
 :root {
   --azular-blue: #2563EB;
+  --azular-dark: #1D4ED8;
 }
 
 body {
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
-  @apply bg-[#F8FAFF] transition-colors duration-300;
+  /* Fundo cinza bem claro típico de apps de banco para destacar os cards brancos */
+  @apply bg-[#F4F7FE] text-slate-900 transition-colors duration-300;
 }
 
 body.dark {
-  @apply bg-[#0f172a] text-slate-100;
+  @apply bg-[#0B0F1A] text-slate-100;
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+/* Scrollbar invisível mas funcional */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Customização da barra de rolagem lateral */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(37, 99, 235, 0.2);
-  border-radius: 10px;
-}
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  @apply bg-blue-400;
-}
-
+/* Efeito de vidro para elementos flutuantes */
 .glass-morphism {
-  @apply bg-white/80 backdrop-blur-md border border-white/20 dark:bg-slate-800/80 dark:border-slate-700/30;
+  @apply bg-white/90 backdrop-blur-md border border-white/20 dark:bg-slate-900/90 dark:border-slate-800/30;
 }
 
-.bank-gradient {
-  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+/* Gradiente oficial do Header estilo Banco */
+.bank-header-gradient {
+  background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
+}
+
+/* Ajuste de inputs para estilo minimalista */
+input, select {
+  @apply bg-transparent outline-none;
+}
+
+/* Animações de entrada */
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out forwards;
 }
