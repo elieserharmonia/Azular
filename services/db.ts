@@ -1,3 +1,4 @@
+
 import { firebaseEnabled } from '../lib/firebase';
 import { getDb } from './firestoreClient';
 import { localDbClient } from './localDbClient';
@@ -168,17 +169,24 @@ export const updateProvisionSeries = async (
 };
 
 /**
- * EXCLUIR SÉRIE DE PREVISÕES (Lote)
+ * EXCLUIR SÉRIE DE PREVISÕES (Lote Atômico)
+ * Esta função corrige o bug de apagar apenas o mês atual.
  */
 export const deleteProvisionSeries = async (
   currentTx: Transaction, 
-  scope: 'current' | 'forward' | 'all'
+  scope: 'current' | 'forward' | 'all' | 'range',
+  range?: { from: string, to: string }
 ) => {
-  if (!currentTx.recurrenceGroupId) return deleteTransaction(currentTx.id!);
+  // Se não tem grupo, é um item avulso
+  if (!currentTx.recurrenceGroupId) {
+    return deleteTransaction(currentTx.id!);
+  }
 
-  const txs = await getTransactions(currentTx.userId);
-  const series = txs.filter(t => t.recurrenceGroupId === currentTx.recurrenceGroupId);
+  // 1. Buscar TODOS os itens da série do usuário
+  const allTxs = await getTransactions(currentTx.userId);
+  const series = allTxs.filter(t => t.recurrenceGroupId === currentTx.recurrenceGroupId);
   
+  // 2. Filtrar IDs com base no alcance escolhido
   let targetTxs = [];
   if (scope === 'current') {
     targetTxs = series.filter(t => t.id === currentTx.id);
@@ -186,16 +194,37 @@ export const deleteProvisionSeries = async (
     targetTxs = series.filter(t => t.competenceMonth >= currentTx.competenceMonth);
   } else if (scope === 'all') {
     targetTxs = series;
+  } else if (scope === 'range' && range) {
+    targetTxs = series.filter(t => 
+      t.competenceMonth >= range.from && 
+      t.competenceMonth <= range.to
+    );
   }
 
   const targetIds = targetTxs.map(t => t.id!).filter(id => !!id);
+  if (targetIds.length === 0) return true;
 
+  // 3. Executar a exclusão conforme o motor de dados (Local vs Firestore)
   if (!firebaseEnabled) {
     return localDbClient.bulkDeleteTransactions(targetIds);
   }
 
-  const promises = targetIds.map(id => deleteTransaction(id));
-  return Promise.all(promises);
+  try {
+    const db = await getDb();
+    const { doc, writeBatch } = (await import('firebase/firestore')) as any;
+    const batch = writeBatch(db);
+    
+    targetIds.forEach(id => {
+      const ref = doc(db, 'transactions', id);
+      batch.delete(ref);
+    });
+
+    await batch.commit();
+    return true;
+  } catch (err) {
+    console.error("Erro no deleteProvisionSeries (Firestore):", err);
+    throw err;
+  }
 };
 
 export const updateTransaction = async (id: string, data: Partial<Transaction>) => {

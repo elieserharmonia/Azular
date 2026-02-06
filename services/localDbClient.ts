@@ -1,3 +1,4 @@
+
 import { Transaction, Account, Category, Goal, Debt } from '../types';
 import { DEFAULT_CATEGORIES } from '../constants';
 import { safeStorage } from '../utils/storage';
@@ -110,9 +111,15 @@ export const localDbClient = {
     setLS('transactions', items.filter(t => t.id !== id));
   },
 
+  /**
+   * EXCLUSÃO EM LOTE (PREVIEW/LOCAL)
+   * Resolve o bug de apagar apenas o mês atual no modo demonstração.
+   */
   bulkDeleteTransactions: async (ids: string[]) => {
     const items = getLS<any[]>('transactions', []);
-    setLS('transactions', items.filter(t => !ids.includes(t.id!)));
+    const remaining = items.filter(t => !ids.includes(t.id!));
+    setLS('transactions', remaining);
+    return true;
   },
 
   getProvisions: async (userId: string) => {
