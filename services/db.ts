@@ -159,6 +159,70 @@ export const deleteRecurringSeries = async (params: {
 };
 
 /**
+ * RESET TOTAL DO USUÁRIO (Wipe My Data)
+ */
+export const wipeUserData = async (userId: string): Promise<{ deletedCount: number }> => {
+  if (!userId) throw new Error("Usuário não identificado.");
+
+  if (!firebaseEnabled) {
+    await localDbClient.resetUser(userId);
+    return { deletedCount: 0 };
+  }
+
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs, doc, writeBatch, serverTimestamp } = (await import('firebase/firestore')) as any;
+    
+    const collectionsToWipe = [
+      'transactions', 
+      'accounts', 
+      'categories', 
+      'debts', 
+      'goals', 
+      'goalContributions'
+    ];
+
+    let totalDeleted = 0;
+    const CHUNK_SIZE = 300;
+
+    for (const collName of collectionsToWipe) {
+      const q = query(collection(db, collName), where('userId', '==', userId));
+      const snap = await getDocs(q);
+      const docs = snap.docs;
+
+      if (docs.length === 0) continue;
+
+      // Deletar em lotes
+      for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+        const chunk = docs.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((d: any) => batch.delete(d.ref));
+        await batch.commit();
+        totalDeleted += chunk.length;
+      }
+    }
+
+    // Resetar perfil parcial (mantendo o doc mas limpando campos custom)
+    const userRef = doc(db, 'users', userId);
+    const batch = writeBatch(db);
+    batch.update(userRef, {
+      fullName: '',
+      phone: '',
+      birthDate: '',
+      avatarUrl: null,
+      address: {},
+      updatedAt: serverTimestamp()
+    });
+    await batch.commit();
+
+    return { deletedCount: totalDeleted };
+  } catch (err) {
+    console.error("Erro ao limpar dados do usuário:", err);
+    throw err;
+  }
+};
+
+/**
  * RESTANTE DAS FUNÇÕES DE ACESSO
  */
 

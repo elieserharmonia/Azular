@@ -1,8 +1,9 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../App';
 import { firebaseEnabled } from '../lib/firebase';
 import { getAuthClient } from '../services/authClient';
-import { saveUserProfile } from '../services/db';
+import { saveUserProfile, wipeUserData } from '../services/db';
 import { useToast } from '../context/ToastContext';
 import { 
   LogOut, 
@@ -11,19 +12,17 @@ import {
   Camera, 
   Loader2, 
   ImagePlus, 
-  Fingerprint, 
   Sparkles, 
-  Download,
-  Smartphone,
-  Share,
-  PlusSquare,
   Save,
   Mail,
   Phone,
   Calendar,
   MapPin,
   CheckCircle,
-  Settings
+  Settings,
+  Trash2,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { adService } from '../services/adService';
 import { Link } from 'react-router-dom';
@@ -32,12 +31,16 @@ const MARKETING_CONSENT_TEXT = "Aceito receber comunicações, promoções e fel
 
 const Profile: React.FC = () => {
   const { user, userProfile, isPreview } = useAuth();
-  const { notifySuccess, notifyError } = useToast();
+  const { notifySuccess, notifyError, notifyInfo } = useToast();
   
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isPremium, setIsPremium] = useState(adService.isPremium());
   const [isStandalone, setIsStandalone] = useState(false);
+  
+  // Wipe Data State
+  const [showWipeModal, setShowWipeModal] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState('');
+  const [isWiping, setIsWiping] = useState(false);
   
   // Form State
   const [fullName, setFullName] = useState(userProfile?.fullName || '');
@@ -49,7 +52,6 @@ const Profile: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Detectar PWA mode
     setIsStandalone(('standalone' in window.navigator && (window.navigator as any).standalone) || window.matchMedia('(display-mode: standalone)').matches);
     
     if (userProfile) {
@@ -83,12 +85,11 @@ const Profile: React.FC = () => {
     setIsSaving(true);
     
     try {
-      // Fix: cast dynamic firestore import to any
       const { serverTimestamp } = (await import('firebase/firestore')) as any;
       
       const payload: any = {
         fullName: fullName.trim(),
-        displayName: fullName.trim().split(' ')[0], // Atualiza o nome curto
+        displayName: fullName.trim().split(' ')[0], 
         phone: phone.trim(),
         birthDate,
         address: { logradouro: address.trim() },
@@ -96,7 +97,6 @@ const Profile: React.FC = () => {
         updatedAt: serverTimestamp()
       };
 
-      // Se mudou o Opt-In, registra o texto e timestamp para auditoria LGPD
       if (marketingOptIn !== userProfile?.marketingOptIn) {
         payload.marketingOptInAt = serverTimestamp();
         payload.marketingOptInText = MARKETING_CONSENT_TEXT;
@@ -105,10 +105,27 @@ const Profile: React.FC = () => {
       await saveUserProfile(user.uid, payload);
       notifySuccess("Perfil atualizado com sucesso!");
     } catch (err) {
-      console.error(err);
       notifyError("Erro ao salvar perfil.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleWipeData = async () => {
+    if (!user || wipeConfirmText !== 'APAGAR') return;
+    
+    setIsWiping(true);
+    try {
+      const result = await wipeUserData(user.uid);
+      notifySuccess(`Base limpa: ${result.deletedCount} itens removidos.`);
+      setShowWipeModal(false);
+      setWipeConfirmText('');
+      // Recarrega para limpar estados da UI
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+      notifyError("Erro ao processar limpeza de dados.");
+    } finally {
+      setIsWiping(false);
     }
   };
 
@@ -285,6 +302,23 @@ const Profile: React.FC = () => {
         </button>
       </form>
 
+      {/* DANGER ZONE - WIPE DATA */}
+      <section className="bg-red-50 p-8 rounded-[2.5rem] border-2 border-red-100 space-y-4">
+        <div className="flex items-center gap-4 text-red-600">
+           <AlertTriangle size={24} />
+           <h4 className="font-black uppercase tracking-tight">Zona de Perigo</h4>
+        </div>
+        <p className="text-[10px] font-bold text-red-700 uppercase tracking-widest">
+           Limpe todos os seus lançamentos, contas, previsões e metas para começar do zero. Esta ação é irreversível.
+        </p>
+        <button 
+          onClick={() => setShowWipeModal(true)}
+          className="w-full py-4 bg-white border-2 border-red-200 text-red-500 font-black uppercase tracking-widest text-[10px] rounded-2xl shadow-sm hover:bg-red-50 transition-all flex items-center justify-center gap-2"
+        >
+          <Trash2 size={16} /> Limpar Meus Dados (Teste)
+        </button>
+      </section>
+
       {isAdmin && (
         <div className="space-y-6">
           <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Administração</h3>
@@ -309,6 +343,52 @@ const Profile: React.FC = () => {
           <LogOut size={24} /> Sair do Aplicativo
         </button>
       </div>
+
+      {/* MODAL DE WIPE DATA */}
+      {showWipeModal && (
+        <div className="fixed inset-0 bg-red-900/40 backdrop-blur-md z-[300] flex items-center justify-center p-6 animate-in fade-in">
+          <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl p-10 space-y-8 relative border-4 border-red-50">
+            <div className="text-center space-y-4">
+               <div className="w-16 h-16 bg-red-100 text-red-600 rounded-[2rem] flex items-center justify-center mx-auto">
+                 <AlertTriangle size={32} />
+               </div>
+               <h3 className="text-2xl font-black uppercase tracking-tighter text-gray-900">Atenção Total</h3>
+               <p className="text-sm font-bold text-gray-400 leading-tight">
+                 Isso apaga TODOS os seus lançamentos, previsões, contas, categorias, dívidas e metas. Não tem volta.
+               </p>
+            </div>
+
+            <div className="space-y-4">
+               <label className="text-[10px] font-black uppercase text-gray-400 block text-center tracking-widest">Digite <span className="text-red-500">APAGAR</span> para confirmar:</label>
+               <input 
+                 autoFocus
+                 type="text" 
+                 className="w-full bg-red-50 border-b-4 border-red-100 p-4 rounded-2xl font-black text-center text-red-600 outline-none focus:border-red-600 transition-all uppercase"
+                 placeholder="Digite aqui..."
+                 value={wipeConfirmText}
+                 onChange={e => setWipeConfirmText(e.target.value)}
+               />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button 
+                disabled={wipeConfirmText !== 'APAGAR' || isWiping}
+                onClick={handleWipeData}
+                className="w-full bg-red-600 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-30"
+              >
+                {isWiping ? <Loader2 className="animate-spin" /> : <Trash2 size={20} />}
+                {isWiping ? 'Limpando...' : 'Confirmar Exclusão'}
+              </button>
+              <button 
+                onClick={() => { setShowWipeModal(false); setWipeConfirmText(''); }}
+                className="w-full py-4 text-gray-300 font-black uppercase text-[10px] tracking-widest"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

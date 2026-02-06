@@ -119,5 +119,15 @@ export const localDbClient = {
   },
 
   getDebts: async (userId: string): Promise<Debt[]> => getLS<Debt[]>('debts', []),
-  getGoals: async (userId: string): Promise<Goal[]> => getLS<Goal[]>('goals', [])
+  getGoals: async (userId: string): Promise<Goal[]> => getLS<Goal[]>('goals', []),
+
+  /**
+   * RESET TOTAL DO USUÁRIO (MODO PREVIEW)
+   */
+  resetUser: async (userId: string) => {
+    const keysToClear = ['accounts', 'categories', 'transactions', 'debts', 'goals', 'goalContributions'];
+    keysToClear.forEach(k => safeStorage.remove(LS_KEY(k)));
+    safeStorage.remove('azular_preview_profile');
+    return { deletedCount: 'todos' };
+  }
 };
