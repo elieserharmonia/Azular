@@ -1,6 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import * as firestore from "firebase/firestore";
 import { isPreview } from "../utils/env";
 
 const firebaseConfig = {
@@ -17,6 +16,4 @@ const isPre = isPreview();
 // No Preview, forçamos o desligamento completo do Firebase
 export const app = isPre ? null : (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig));
 export const auth = isPre ? null : (app ? getAuth(app) : null);
-// Cast para any para evitar erros de tipagem ao usar métodos do wildcard firestore
-export const db = isPre ? null : (app ? (firestore as any).getFirestore(app) : null);
 export const firebaseEnabled = !isPre && !!app;
