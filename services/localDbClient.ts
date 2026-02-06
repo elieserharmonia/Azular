@@ -37,6 +37,20 @@ export const localDbClient = {
     return newItem;
   },
 
+  updateAccount: async (id: string, data: any) => {
+    const items = getLS<Account[]>('accounts', []);
+    const idx = items.findIndex(t => t.id === id);
+    if (idx !== -1) {
+      items[idx] = { ...items[idx], ...data };
+      setLS('accounts', items);
+    }
+  },
+
+  deleteAccount: async (id: string) => {
+    const items = getLS<Account[]>('accounts', []);
+    setLS('accounts', items.filter(t => t.id !== id));
+  },
+
   getCategories: async (userId: string): Promise<Category[]> => {
     const cats = getLS<Category[]>('categories', []);
     if (cats.length === 0) {

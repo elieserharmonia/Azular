@@ -6,7 +6,7 @@ import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatte
 import { parseNumericValue } from '../utils/number';
 import { useToast } from '../context/ToastContext';
 import { 
-  ChevronLeft, ChevronRight, Loader2, AlertCircle, Plus
+  ChevronLeft, ChevronRight, Loader2, AlertCircle, Plus, Info
 } from 'lucide-react';
 import CategorySelect from '../components/CategorySelect';
 
@@ -34,7 +34,7 @@ const Provision: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [uid]); // Recarrega se o UID mudar
+  }, [uid]); 
 
   const loadData = async () => {
     if (!uid) {
@@ -44,7 +44,6 @@ const Provision: React.FC = () => {
     
     setLoading(true);
     try {
-      // Promise.all com catch individual para evitar que uma falha derrube tudo
       const [txs, accs, cats] = await Promise.all([
         getTransactions(uid).catch(() => []), 
         getAccounts(uid).catch(() => []),
@@ -112,8 +111,6 @@ const Provision: React.FC = () => {
     if (!uid) return notifyInfo("Faça login para salvar seus planos.");
     
     const amountVal = parseNumericValue(formData.plannedAmount);
-    
-    // Validação de segurança para valores
     if (isNaN(amountVal) || amountVal <= 0) {
       notifyInfo("Informe um valor válido maior que zero.");
       return;
@@ -124,7 +121,7 @@ const Provision: React.FC = () => {
       const payload = {
         ...formData,
         plannedAmount: amountVal,
-        amount: 0, // Inicia como zero pois é apenas plano
+        amount: 0, 
         userId: uid,
         status: 'planned' as const
       };
@@ -135,26 +132,20 @@ const Provision: React.FC = () => {
         await addTransaction(payload);
       }
       
-      notifySuccess("Plano salvo com sucesso.");
+      notifySuccess("Plano salvo!");
       setShowProvisionModal(false);
       loadData();
     } catch (err: any) {
-      console.error("Erro ao salvar provisão:", err);
-      
-      const errorMessage = err.message || "";
-      
-      if (errorMessage.includes("ORPHAN_DOC")) {
-        notifyError("Erro: Registro antigo sem identificação. Por favor, remova e crie novamente.");
-      } else if (errorMessage.includes("FORBIDDEN") || errorMessage.includes("insufficient permissions")) {
-        notifyError("Sem permissão para alterar este registro. Verifique sua conta.");
-      } else if (errorMessage.includes("MISSING_USERID")) {
-        notifyError("Sessão expirada. Faça login novamente para salvar.");
-      } else {
-        notifyError("Não foi possível salvar os dados no momento.");
-      }
+      notifyError("Erro ao salvar.");
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Helper para nome do mês abreviado em mobile
+  const getShortMonth = (m: string) => {
+    const full = getMonthName(m).split(' de ')[0].toUpperCase();
+    return full.length > 3 ? full.substring(0, 3) : full;
   };
 
   return (
@@ -180,73 +171,94 @@ const Provision: React.FC = () => {
               setEditingItem(null);
               setShowProvisionModal(true); 
             }} 
-            className={`ml-4 px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2 transition-all ${
+            className={`ml-4 px-4 md:px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2 transition-all ${
               !uid ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white active:scale-95'
             }`}
           >
-            <Plus size={14} /> Novo Plano
+            <Plus size={14} /> <span className="hidden xs:inline">Novo Plano</span>
           </button>
         </div>
       </header>
 
-      <div className="bg-white rounded-[2.5rem] border-2 border-blue-50 shadow-xl overflow-hidden relative">
-        <div className="overflow-x-auto no-scrollbar">
+      <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] border-2 border-blue-50 shadow-xl overflow-hidden relative">
+        <div className="overflow-x-auto no-scrollbar scroll-smooth">
           {loading ? (
              <div className="p-20 text-center flex flex-col items-center gap-4">
                 <Loader2 className="animate-spin text-blue-600" />
-                <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Organizando sua planilha...</span>
+                <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Calculando projeções...</span>
              </div>
           ) : (
-            <table className="w-full text-left border-collapse min-w-[1200px]">
+            <table className="w-full text-left border-collapse min-w-[800px] md:min-w-[1200px]">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="sticky left-0 z-30 bg-gray-50 px-6 py-5 text-[10px] font-black uppercase text-gray-400 tracking-widest border-r border-blue-50 min-w-[280px]">DESCRITIVO</th>
+                  <th className="sticky left-0 z-30 bg-gray-100 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[120px] md:w-[280px]">DESCRITIVO</th>
                   {tableMonths.map(m => (
-                    <th key={m} className={`px-4 py-5 text-[10px] font-black uppercase text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'}`}>
-                      {getMonthName(m).split(' de ')[0].toUpperCase()}
+                    <th key={m} className={`px-2 md:px-4 py-4 md:py-5 text-[9px] md:text-[10px] font-black uppercase text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'}`}>
+                      <span className="md:hidden">{getShortMonth(m)}</span>
+                      <span className="hidden md:inline">{getMonthName(m).split(' de ')[0].toUpperCase()}</span>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                 {/* Ganhos */}
+                 {/* Seção Ganhos */}
                  <tr className="bg-emerald-600 text-white font-black">
-                   <td className="sticky left-0 bg-emerald-600 px-6 py-2 text-[10px] uppercase border-r border-emerald-500">Ganhos Planejados</td>
+                   <td className="sticky left-0 bg-emerald-600 px-4 md:px-6 py-2 text-[9px] md:text-[10px] uppercase border-r border-emerald-500 z-20">Ganhos Planejados</td>
                    {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                  </tr>
                  {tableData.entryGroups.length === 0 ? (
                    <tr>
-                     <td className="sticky left-0 bg-white px-6 py-4 text-[10px] font-bold text-gray-300 italic">Nenhum ganho previsto</td>
+                     <td className="sticky left-0 bg-white px-4 md:px-6 py-3 text-[9px] md:text-[10px] font-bold text-gray-300 italic z-20">Sem entradas previstas</td>
                      {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                    </tr>
                  ) : tableData.entryGroups.map(g => (
-                    <tr key={g.catId} className="bg-emerald-50/30">
-                      <td className="sticky left-0 bg-[#F4FCF9] px-6 py-2 border-r border-emerald-100 text-[9px] font-black text-emerald-700 uppercase">{g.catName}</td>
-                      {tableMonths.map(m => <td key={m} className="px-4 py-2 text-center text-[10px] font-black">{formatCurrency(g.catTotals[m])}</td>)}
-                    </tr>
+                    <React.Fragment key={g.catId}>
+                      <tr className="bg-emerald-50/50">
+                        <td className="sticky left-0 bg-[#F4FCF9] px-4 md:px-6 py-2 border-r border-emerald-100 text-[8px] md:text-[9px] font-black text-emerald-700 uppercase z-20">{g.catName}</td>
+                        {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-2 text-center text-[9px] md:text-[10px] font-black text-emerald-800">{formatCurrency(g.catTotals[m])}</td>)}
+                      </tr>
+                      {g.rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                          <td className="sticky left-0 bg-white px-8 md:px-10 py-1.5 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">{row.name}</td>
+                          {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-1.5 text-center text-[8px] md:text-[9px] font-medium text-gray-400">{row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}</td>)}
+                        </tr>
+                      ))}
+                    </React.Fragment>
                  ))}
                  
-                 {/* Gastos */}
+                 {/* Seção Gastos */}
                  <tr className="bg-blue-600 text-white font-black">
-                   <td className="sticky left-0 bg-blue-600 px-6 py-2 text-[10px] uppercase border-r border-blue-500">Gastos Planejados</td>
+                   <td className="sticky left-0 bg-blue-600 px-4 md:px-6 py-2 text-[9px] md:text-[10px] uppercase border-r border-blue-500 z-20">Gastos Planejados</td>
                    {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                  </tr>
                  {tableData.exitGroups.length === 0 ? (
                    <tr>
-                     <td className="sticky left-0 bg-white px-6 py-4 text-[10px] font-bold text-gray-300 italic">Nenhum gasto previsto</td>
+                     <td className="sticky left-0 bg-white px-4 md:px-6 py-3 text-[9px] md:text-[10px] font-bold text-gray-300 italic z-20">Sem gastos previstos</td>
                      {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                    </tr>
                  ) : tableData.exitGroups.map(g => (
-                    <tr key={g.catId} className="bg-blue-50/30">
-                      <td className="sticky left-0 bg-[#F5F8FF] px-6 py-2 border-r border-blue-100 text-[9px] font-black text-blue-700 uppercase">{g.catName}</td>
-                      {tableMonths.map(m => <td key={m} className="px-4 py-2 text-center text-[10px] font-black">{formatCurrency(g.catTotals[m])}</td>)}
-                    </tr>
+                    <React.Fragment key={g.catId}>
+                      <tr className="bg-blue-50/50">
+                        <td className="sticky left-0 bg-[#F5F8FF] px-4 md:px-6 py-2 border-r border-blue-100 text-[8px] md:text-[9px] font-black text-blue-700 uppercase z-20">{g.catName}</td>
+                        {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-2 text-center text-[9px] md:text-[10px] font-black text-blue-800">{formatCurrency(g.catTotals[m])}</td>)}
+                      </tr>
+                      {g.rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                          <td className="sticky left-0 bg-white px-8 md:px-10 py-1.5 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">{row.name}</td>
+                          {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-1.5 text-center text-[8px] md:text-[9px] font-medium text-gray-400">{row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}</td>)}
+                        </tr>
+                      ))}
+                    </React.Fragment>
                  ))}
                  
                  {/* Acumulado */}
                  <tr className="bg-slate-900 text-white font-black">
-                   <td className="sticky left-0 bg-slate-900 px-6 py-5 text-[11px] uppercase border-r border-slate-700">Saldo Planejado Acumulado</td>
-                   {tableMonths.map(m => <td key={m} className="px-4 py-5 text-center text-sm font-black">{formatCurrency(tableData.accumulated[m])}</td>)}
+                   <td className="sticky left-0 bg-slate-900 px-4 md:px-6 py-4 md:py-5 text-[10px] md:text-[11px] uppercase border-r border-slate-700 z-20">Acumulado Previsto</td>
+                   {tableMonths.map(m => (
+                     <td key={m} className={`px-2 md:px-4 py-4 md:py-5 text-center text-[10px] md:text-sm font-black ${tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                       {formatCurrency(tableData.accumulated[m])}
+                     </td>
+                   ))}
                  </tr>
               </tbody>
             </table>
@@ -254,87 +266,61 @@ const Provision: React.FC = () => {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 text-[9px] font-bold text-gray-400 uppercase tracking-widest px-2">
+        <Info size={12} className="text-blue-500" /> Arraste para os lados para ver os meses seguintes.
+      </div>
+
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl p-10 relative border-2 border-blue-50 animate-in zoom-in duration-300">
-            <h3 className="text-2xl font-black uppercase tracking-tighter mb-8">Planejamento Mensal</h3>
+          <div className="bg-white rounded-[2.5rem] md:rounded-[3rem] w-full max-w-lg shadow-2xl p-6 md:p-10 relative border-2 border-blue-50 animate-in zoom-in duration-300">
+            <h3 className="text-xl md:text-2xl font-black uppercase tracking-tighter mb-8 text-center md:text-left">Planejamento Mensal</h3>
             
             {!uid ? (
               <div className="text-center py-10 space-y-4">
-                <div className="bg-amber-50 p-6 rounded-3xl border-2 border-amber-100 inline-block">
-                  <AlertCircle className="text-amber-500 mx-auto mb-2" size={32} />
-                  <p className="text-[10px] font-black uppercase text-amber-800 tracking-widest leading-relaxed">
-                    Você está visualizando o app no modo de demonstração.<br/>
-                    Para salvar dados, é necessário fazer login.
-                  </p>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={() => setShowProvisionModal(false)}
-                  className="w-full py-4 font-black uppercase text-[10px] text-gray-400 tracking-widest"
-                >
-                  Voltar
-                </button>
+                <AlertCircle className="text-amber-500 mx-auto mb-2" size={32} />
+                <p className="text-[10px] font-black uppercase text-amber-800 tracking-widest leading-relaxed">
+                  Modo demonstração habilitado.<br/>Entre para salvar.
+                </p>
+                <button type="button" onClick={() => setShowProvisionModal(false)} className="w-full py-4 text-gray-400 font-black uppercase text-[10px]">Fechar</button>
               </div>
             ) : (
               <form onSubmit={handleSaveProvision} className="space-y-6">
                 <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
-                  <button 
-                    type="button" 
-                    onClick={() => setFormData({...formData, type: 'credit'})} 
-                    className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}
-                  >
-                    Entrada
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setFormData({...formData, type: 'debit'})} 
-                    className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}
-                  >
-                    Saída
-                  </button>
+                  <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada</button>
+                  <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}>Saída</button>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">O que você planeja?</label>
-                  <input required type="text" className="w-full text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 transition-colors" placeholder="Ex: Aluguel, Supermercado..." value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
+                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block tracking-widest">Descrição</label>
+                  <input required type="text" className="w-full text-xl md:text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 transition-colors bg-transparent" placeholder="Ex: Aluguel, Salário..." value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-8">
+                <div className="grid grid-cols-2 gap-4 md:gap-8">
                   <div>
-                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Quanto?</label>
-                    <input required type="text" className="w-full text-3xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 transition-colors" placeholder="0,00" value={formData.plannedAmount || ''} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} />
+                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block tracking-widest">Valor</label>
+                    <input required type="text" className="w-full text-2xl md:text-3xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" placeholder="0,00" value={formData.plannedAmount || ''} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Mês Alvo</label>
-                    <input required type="month" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
+                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block tracking-widest">Mês Alvo</label>
+                    <input required type="month" className="w-full text-lg md:text-xl font-black border-b-4 border-blue-50 pb-2 outline-none bg-transparent" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-8">
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Conta Destino</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Conta Destino</label>
                     <select required className="w-full font-black border-b-4 border-blue-50 bg-transparent outline-none pb-2" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
                       <option value="">Selecione...</option>
                       {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
                   </div>
-                  <CategorySelect 
-                    userId={uid} 
-                    value={formData.categoryId || ''} 
-                    direction={formData.type || 'debit'} 
-                    onChange={(id) => setFormData({...formData, categoryId: id})} 
-                  />
+                  <CategorySelect userId={uid} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
                 </div>
 
                 <div className="flex gap-4 pt-4">
-                  <button type="button" onClick={() => setShowProvisionModal(false)} className="flex-1 py-4 font-black uppercase text-[10px] text-gray-400 tracking-widest">Cancelar</button>
-                  <button 
-                    type="submit" 
-                    disabled={isSaving} 
-                    className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-50 active:scale-95 transition-all"
-                  >
-                    {isSaving ? 'Salvando...' : 'Confirmar Plano'}
+                  <button type="button" onClick={() => setShowProvisionModal(false)} className="flex-1 py-4 font-black uppercase text-[10px] text-gray-400 tracking-widest">Sair</button>
+                  <button disabled={isSaving} type="submit" className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-50 active:scale-95 transition-all">
+                    {isSaving ? 'Salvando...' : 'Salvar Plano'}
                   </button>
                 </div>
               </form>

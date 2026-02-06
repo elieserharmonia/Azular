@@ -40,6 +40,39 @@ export const getAccounts = async (userId: string): Promise<Account[]> => {
   }
 };
 
+export const addAccount = async (data: Partial<Account>) => {
+  if (!firebaseEnabled) return localDbClient.addAccount(data);
+  try {
+    const db = await getDb();
+    const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    return addDoc(collection(db, 'accounts'), { ...data, createdAt: serverTimestamp() });
+  } catch (err) {
+    return localDbClient.addAccount(data);
+  }
+};
+
+export const updateAccount = async (id: string, data: Partial<Account>) => {
+  if (!firebaseEnabled) return localDbClient.updateAccount(id, data);
+  try {
+    const db = await getDb();
+    const { doc, updateDoc } = (await import('firebase/firestore')) as any;
+    return updateDoc(doc(db, 'accounts', id), data);
+  } catch (err) {
+    return localDbClient.updateAccount(id, data);
+  }
+};
+
+export const deleteAccount = async (id: string) => {
+  if (!firebaseEnabled) return localDbClient.deleteAccount(id);
+  try {
+    const db = await getDb();
+    const { doc, deleteDoc } = (await import('firebase/firestore')) as any;
+    return deleteDoc(doc(db, 'accounts', id));
+  } catch (err) {
+    return localDbClient.deleteAccount(id);
+  }
+};
+
 export const getCategories = async (userId: string): Promise<Category[]> => {
   if (!firebaseEnabled) return localDbClient.getCategories(userId);
   try {
