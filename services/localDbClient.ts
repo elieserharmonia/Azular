@@ -99,9 +99,20 @@ export const localDbClient = {
     }
   },
 
+  bulkUpdateTransactions: async (ids: string[], data: any) => {
+    const items = getLS<any[]>('transactions', []);
+    const updated = items.map(t => ids.includes(t.id!) ? { ...t, ...data, updatedAt: { seconds: Date.now() / 1000 } } : t);
+    setLS('transactions', updated);
+  },
+
   deleteTransaction: async (id: string) => {
     const items = getLS<any[]>('transactions', []);
     setLS('transactions', items.filter(t => t.id !== id));
+  },
+
+  bulkDeleteTransactions: async (ids: string[]) => {
+    const items = getLS<any[]>('transactions', []);
+    setLS('transactions', items.filter(t => !ids.includes(t.id!)));
   },
 
   getProvisions: async (userId: string) => {

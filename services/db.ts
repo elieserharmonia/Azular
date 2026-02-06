@@ -1,4 +1,3 @@
-
 import { firebaseEnabled } from '../lib/firebase';
 import { getDb } from './firestoreClient';
 import { localDbClient } from './localDbClient';
@@ -158,7 +157,13 @@ export const updateProvisionSeries = async (
     targetTxs = series;
   }
 
-  const promises = targetTxs.map(t => updateTransaction(t.id!, updatedFields));
+  const targetIds = targetTxs.map(t => t.id!).filter(id => !!id);
+
+  if (!firebaseEnabled) {
+    return localDbClient.bulkUpdateTransactions(targetIds, updatedFields);
+  }
+
+  const promises = targetIds.map(id => updateTransaction(id, updatedFields));
   return Promise.all(promises);
 };
 
@@ -183,7 +188,13 @@ export const deleteProvisionSeries = async (
     targetTxs = series;
   }
 
-  const promises = targetTxs.map(t => deleteTransaction(t.id!));
+  const targetIds = targetTxs.map(t => t.id!).filter(id => !!id);
+
+  if (!firebaseEnabled) {
+    return localDbClient.bulkDeleteTransactions(targetIds);
+  }
+
+  const promises = targetIds.map(id => deleteTransaction(id));
   return Promise.all(promises);
 };
 

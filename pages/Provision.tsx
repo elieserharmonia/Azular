@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { 
@@ -257,7 +256,7 @@ const Provision: React.FC = () => {
             <table className="w-full text-left border-collapse min-w-[800px] md:min-w-[1200px]">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="sticky left-0 z-30 bg-gray-100 px-4 py-4 text-[9px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[120px] md:w-[280px]">DESCRITIVO</th>
+                  <th className="sticky left-0 z-30 bg-gray-100 px-2 md:px-4 py-4 text-[8px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[90px] md:w-[280px]">DESCRITIVO</th>
                   {tableMonths.map(m => (
                     <th key={m} className={`px-2 py-4 text-[9px] md:text-[10px] font-black uppercase text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'}`}>
                       <span className="md:hidden">{getShortMonth(m)}</span>
@@ -269,25 +268,25 @@ const Provision: React.FC = () => {
               <tbody className="divide-y divide-gray-50">
                  {/* Ganhos */}
                  <tr className="bg-emerald-600 text-white font-black">
-                   <td className="sticky left-0 bg-emerald-600 px-4 py-2 text-[9px] md:text-[10px] uppercase border-r border-emerald-500 z-20">Ganhos Planejados</td>
+                   <td className="sticky left-0 bg-emerald-600 px-2 md:px-4 py-2 text-[8px] md:text-[10px] uppercase border-r border-emerald-500 z-20">Ganhos Planejados</td>
                    {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                  </tr>
                  {tableData.entryGroups.map(g => (
                     <React.Fragment key={g.catId}>
                       <tr className="bg-emerald-50/30">
-                        <td className="sticky left-0 bg-[#F4FCF9] px-4 py-2 border-r border-emerald-100 text-[8px] md:text-[9px] font-black text-emerald-700 uppercase z-20">{g.catName}</td>
-                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[9px] md:text-[10px] font-black text-emerald-800">{formatCurrency(g.catTotals[m])}</td>)}
+                        <td className="sticky left-0 bg-[#F4FCF9] px-2 md:px-4 py-2 border-r border-emerald-100 text-[7px] md:text-[9px] font-black text-emerald-700 uppercase z-20 truncate">{g.catName}</td>
+                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[8px] md:text-[10px] font-black text-emerald-800">{formatCurrency(g.catTotals[m])}</td>)}
                       </tr>
                       {g.rows.map((row, idx) => (
                         <tr key={idx} className="hover:bg-gray-50 transition-colors group">
-                          <td className="sticky left-0 bg-white px-8 py-2 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">
+                          <td className="sticky left-0 bg-white px-4 md:px-8 py-2 border-r border-gray-100 text-[7px] md:text-[8px] font-bold text-gray-500 uppercase z-20 truncate">
                             {row.name}
                           </td>
                           {tableMonths.map(m => (
                             <td 
                               key={m} 
                               onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)}
-                              className={`px-2 py-2 text-center text-[8px] md:text-[9px] font-medium cursor-pointer transition-all ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}
+                              className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer transition-all ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}
                             >
                               <div className="flex flex-col items-center gap-0.5">
                                 {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
@@ -302,25 +301,25 @@ const Provision: React.FC = () => {
                  
                  {/* Gastos */}
                  <tr className="bg-blue-600 text-white font-black">
-                   <td className="sticky left-0 bg-blue-600 px-4 py-2 text-[9px] md:text-[10px] uppercase border-r border-blue-500 z-20">Gastos Planejados</td>
+                   <td className="sticky left-0 bg-blue-600 px-2 md:px-4 py-2 text-[8px] md:text-[10px] uppercase border-r border-blue-500 z-20">Gastos Planejados</td>
                    {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                  </tr>
                  {tableData.exitGroups.map(g => (
                     <React.Fragment key={g.catId}>
                       <tr className="bg-blue-50/30">
-                        <td className="sticky left-0 bg-[#F5F8FF] px-4 py-2 border-r border-blue-100 text-[8px] md:text-[9px] font-black text-blue-700 uppercase z-20">{g.catName}</td>
-                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[9px] md:text-[10px] font-black text-blue-800">{formatCurrency(g.catTotals[m])}</td>)}
+                        <td className="sticky left-0 bg-[#F5F8FF] px-2 md:px-4 py-2 border-r border-blue-100 text-[7px] md:text-[9px] font-black text-blue-700 uppercase z-20 truncate">{g.catName}</td>
+                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[8px] md:text-[10px] font-black text-blue-800">{formatCurrency(g.catTotals[m])}</td>)}
                       </tr>
                       {g.rows.map((row, idx) => (
                         <tr key={idx} className="hover:bg-gray-50 transition-colors group">
-                          <td className="sticky left-0 bg-white px-8 py-2 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">
+                          <td className="sticky left-0 bg-white px-4 md:px-8 py-2 border-r border-gray-100 text-[7px] md:text-[8px] font-bold text-gray-500 uppercase z-20 truncate">
                             {row.name}
                           </td>
                           {tableMonths.map(m => (
                             <td 
                               key={m} 
                               onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)}
-                              className={`px-2 py-2 text-center text-[8px] md:text-[9px] font-medium cursor-pointer transition-all ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}
+                              className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer transition-all ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}
                             >
                               <div className="flex flex-col items-center gap-0.5">
                                 {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
@@ -335,9 +334,9 @@ const Provision: React.FC = () => {
                  
                  {/* Acumulado */}
                  <tr className="bg-slate-900 text-white font-black">
-                   <td className="sticky left-0 bg-slate-900 px-4 py-4 text-[10px] md:text-[11px] uppercase border-r border-slate-700 z-20">Acumulado Previsto</td>
+                   <td className="sticky left-0 bg-slate-900 px-2 md:px-4 py-4 text-[8px] md:text-[11px] uppercase border-r border-slate-700 z-20">Acumulado Previsto</td>
                    {tableMonths.map(m => (
-                     <td key={m} className={`px-2 py-4 text-center text-[10px] md:text-sm font-black ${tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                     <td key={m} className={`px-2 py-4 text-center text-[8px] md:text-sm font-black ${tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                        {formatCurrency(tableData.accumulated[m])}
                      </td>
                    ))}
