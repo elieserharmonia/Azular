@@ -16,7 +16,7 @@ import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatte
 import { parseNumericValue } from '../utils/number';
 import { useToast } from '../context/ToastContext';
 import { 
-  ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X
+  ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, AlertTriangle
 } from 'lucide-react';
 import CategorySelect from '../components/CategorySelect';
 
@@ -129,20 +129,29 @@ const Provision: React.FC = () => {
         }
         notifySuccess("Série atualizada!");
       } else {
-        // EXCLUSÃO RECORRENTE (TAREFA B & C)
+        // EXCLUSÃO RECORRENTE COM TRAVAS (Tarefa B)
         const result = await deleteRecurringSeries({
           currentTx: editingItem!,
           mode: scope as any,
           fromMonth: scope === 'range' ? rangeStart : editingItem?.competenceMonth,
           toMonth: scope === 'range' ? rangeEnd : undefined
         });
-        notifySuccess(`Removido(s) ${result.deletedCount} lançamento(s).`);
+
+        if (result.deletedCount > 120) {
+           notifyInfo(`Operação concluída em lote: ${result.deletedCount} itens removidos.`);
+        } else {
+           notifySuccess(`Removido(s) ${result.deletedCount} lançamento(s).`);
+        }
       }
       setShowProvisionModal(false);
       setShowScopeModal(false);
       loadData();
-    } catch (err) {
-      notifyError("Erro ao processar solicitação.");
+    } catch (err: any) {
+      if (err.message === 'SERIES_TOO_LARGE') {
+        notifyError("Série ambígua demais (muitos itens similares). Opere individualmente.");
+      } else {
+        notifyError("Erro ao processar solicitação.");
+      }
     } finally {
       setIsSaving(false);
     }
@@ -361,7 +370,11 @@ const Provision: React.FC = () => {
               <button onClick={() => confirmAction('forward')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
                 Deste mês em diante
               </button>
-              <button onClick={() => confirmAction('all')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
+              <button onClick={() => {
+                const totalSeries = transactions.filter(t => t.recurrenceGroupId === editingItem?.recurrenceGroupId).length;
+                if (totalSeries > 120 && !window.confirm(`Atenção: Você está prestes a excluir ${totalSeries} meses de uma vez. Deseja prosseguir?`)) return;
+                confirmAction('all');
+              }} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
                 Toda a série
               </button>
               <button onClick={() => setShowRangeInputs(!showRangeInputs)} className="w-full py-4 px-6 bg-gray-50 border-2 border-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-400 flex items-center justify-between">

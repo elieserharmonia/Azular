@@ -7,42 +7,72 @@ import { addMonthsToMonthKey } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 
 /**
- * TAREFA A - GARANTIR CONSISTÊNCIA DA SÉRIE
- * Localiza itens que deveriam estar no mesmo grupo mas estão "órfãos".
+ * HELPER: Calcula range de meses para busca (Tarefa A - Regra 2)
+ */
+const getMonthKeyRange = (centerMonth: string, back = 24, forward = 24) => {
+  const fromMonth = addMonthsToMonthKey(centerMonth, -back);
+  const toMonth = addMonthsToMonthKey(centerMonth, forward);
+  return { fromMonth, toMonth };
+};
+
+/**
+ * TAREFA A - GARANTIR CONSISTÊNCIA DA SÉRIE (SeriesSync v2)
+ * Localiza itens que deveriam estar no mesmo grupo com critérios rígidos.
  */
 export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<string> => {
   const uid = currentDoc.userId;
-  const groupId = currentDoc.recurrenceGroupId || `rg-${Math.random().toString(36).substring(2, 9)}`;
+  const currentGroupId = currentDoc.recurrenceGroupId;
 
   // 1. Verificar se o grupo já é consistente (tem > 1 item)
   const allTxs = await getTransactions(uid);
-  const existingInGroup = allTxs.filter(t => t.recurrenceGroupId === currentDoc.recurrenceGroupId && t.recurrenceGroupId);
+  const existingInGroup = allTxs.filter(t => t.recurrenceGroupId === currentGroupId && currentGroupId);
 
   if (existingInGroup.length > 1) {
-    console.log(`[SeriesSync] Grupo ${groupId} já é consistente com ${existingInGroup.length} itens.`);
-    return groupId;
+    return currentGroupId!;
   }
 
-  // 2. Se só tem 1 item ou nenhum groupId, buscar "irmãos" por características
-  console.log(`[SeriesSync] Corrigindo série para: ${currentDoc.description}`);
+  // 2. Se inconsistente, buscar "irmãos" com CRITÉRIO FORTE (Tarefa A - Regra 2)
+  console.log(`[SeriesSync] Iniciando busca rigorosa de série para: ${currentDoc.description}`);
   
-  const amount = parseNumericValue(currentDoc.plannedAmount || currentDoc.amount);
+  const currentVal = parseNumericValue(currentDoc.plannedAmount || currentDoc.amount);
+  const { fromMonth, toMonth } = getMonthKeyRange(currentDoc.competenceMonth);
   
-  // Candidatos: Mesmo User, Status Planned, Mesmo Tipo, Mesma Descrição, Mesmo Valor
-  const candidates = allTxs.filter(t => 
-    t.userId === uid &&
-    t.status === 'planned' &&
-    t.type === currentDoc.type &&
-    t.description.toLowerCase().trim() === currentDoc.description.toLowerCase().trim() &&
-    parseNumericValue(t.plannedAmount || t.amount) === amount &&
-    t.categoryId === currentDoc.categoryId
-  );
+  const candidates = allTxs.filter(t => {
+    // Critérios de Identidade
+    const isSameUser = t.userId === uid;
+    const isPlanned = t.status === 'planned';
+    const isSameType = t.type === currentDoc.type;
+    const isSameAccount = t.accountId === currentDoc.accountId;
+    const isSameCategory = t.categoryId === currentDoc.categoryId;
+    const isRecurringFlag = t.isRecurring === true || !!t.recurrence;
+    
+    // Critério de Descrição Exata (Case Insensitive)
+    const isSameDesc = t.description.toLowerCase().trim() === currentDoc.description.toLowerCase().trim();
+    
+    // Critério de Valor (Margem de 2% para reajustes)
+    const tVal = parseNumericValue(t.plannedAmount || t.amount);
+    const diff = Math.abs(tVal - currentVal);
+    const isSimilarValue = currentVal === 0 ? tVal === 0 : (diff / currentVal) <= 0.02;
+
+    // Critério de Tempo (Range de 48 meses)
+    const isInTimeRange = t.competenceMonth >= fromMonth && t.competenceMonth <= toMonth;
+
+    return isSameUser && isPlanned && isSameType && isSameAccount && isSameCategory && 
+           isRecurringFlag && isSameDesc && isSimilarValue && isInTimeRange;
+  });
+
+  // 3. LIMITE DE SEGURANÇA (Tarefa A - Regra 3)
+  if (candidates.length > 120) {
+    console.warn(`[SeriesSync] ABORTADO: candidatos demais (${candidates.length}).`);
+    throw new Error('SERIES_TOO_LARGE');
+  }
 
   if (candidates.length <= 1) {
-    return groupId; // Não encontrou irmãos
+    return currentGroupId || `rg-${Math.random().toString(36).substring(2, 9)}`;
   }
 
-  // 3. Atualizar todos os candidatos com o novo/existente groupId
+  // 4. Atualizar todos os candidatos com um único groupId
+  const finalGroupId = currentGroupId || `rg-${Math.random().toString(36).substring(2, 9)}`;
   const targetIds = candidates.map(c => c.id!).filter(id => !!id);
   
   if (firebaseEnabled) {
@@ -51,7 +81,7 @@ export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<
     const batch = writeBatch(db);
     targetIds.forEach(id => {
       batch.update(doc(db, 'transactions', id), {
-        recurrenceGroupId: groupId,
+        recurrenceGroupId: finalGroupId,
         isRecurring: true,
         updatedAt: serverTimestamp()
       });
@@ -59,17 +89,17 @@ export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<
     await batch.commit();
   } else {
     await localDbClient.bulkUpdateTransactions(targetIds, { 
-      recurrenceGroupId: groupId, 
+      recurrenceGroupId: finalGroupId, 
       isRecurring: true 
     });
   }
 
-  console.log(`[SeriesSync] Série unificada com ${targetIds.length} meses.`);
-  return groupId;
+  console.log(`[SeriesSync] Série unificada com sucesso: ${targetIds.length} meses.`);
+  return finalGroupId;
 };
 
 /**
- * TAREFA B - EXCLUIR RECORRÊNCIA EM LOTE
+ * TAREFA B - EXCLUIR RECORRÊNCIA EM LOTE (Paginado)
  */
 export const deleteRecurringSeries = async (params: {
   currentTx: Transaction,
@@ -79,12 +109,12 @@ export const deleteRecurringSeries = async (params: {
 }) => {
   const { currentTx, mode, fromMonth, toMonth } = params;
   
-  // Primeiro, garante que a série está consistente
+  // 1. Garantir consistência (com as novas travas)
   const groupId = await ensureSeriesConsistency(currentTx);
   
-  // Busca transações atualizadas (após sync)
+  // 2. Busca transações após sync
   const allTxs = await getTransactions(currentTx.userId);
-  const series = allTxs.filter(t => t.recurrenceGroupId === groupId);
+  const series = allTxs.filter(t => t.recurrenceGroupId === groupId && t.status === 'planned');
 
   let targetIds: string[] = [];
 
@@ -108,12 +138,20 @@ export const deleteRecurringSeries = async (params: {
 
   if (targetIds.length === 0) return { deletedCount: 0 };
 
+  // 3. Exclusão em Lotes (Chunks de 300)
   if (firebaseEnabled) {
     const db = await getDb();
     const { doc, writeBatch } = (await import('firebase/firestore')) as any;
-    const batch = writeBatch(db);
-    targetIds.forEach(id => batch.delete(doc(db, 'transactions', id)));
-    await batch.commit();
+    
+    // Paginação de batches
+    const CHUNK_SIZE = 300;
+    for (let i = 0; i < targetIds.length; i += CHUNK_SIZE) {
+      const chunk = targetIds.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach(id => batch.delete(doc(db, 'transactions', id)));
+      await batch.commit();
+    }
+    
     return { deletedCount: targetIds.length };
   } else {
     return localDbClient.bulkDeleteTransactions(targetIds);
@@ -121,7 +159,7 @@ export const deleteRecurringSeries = async (params: {
 };
 
 /**
- * FUNÇÕES DE ACESSO A DADOS (REPASSES)
+ * RESTANTE DAS FUNÇÕES DE ACESSO
  */
 
 export const getTransactions = async (userId: string, competenceMonth?: string): Promise<Transaction[]> => {
@@ -252,7 +290,6 @@ export const updateProvisionSeries = async (
   updatedFields: Partial<Transaction>, 
   scope: 'current' | 'forward' | 'all'
 ) => {
-  // Antes de atualizar, sincroniza a série se necessário
   const groupId = await ensureSeriesConsistency(currentTx);
   const txs = await getTransactions(currentTx.userId);
   const series = txs.filter(t => t.recurrenceGroupId === groupId);
