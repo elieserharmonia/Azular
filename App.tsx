@@ -57,8 +57,8 @@ const App: React.FC = () => {
     let unsubscribeAuth: any = null;
 
     const initAuth = async () => {
+      // MODO PREVIEW: Resolvemos o loading imediatamente
       if (isPreviewMode) {
-        // MOCK USER IMEDIATO
         setUser({ uid: 'preview-user', email: 'demo@azular.app' });
         setUserProfile({ 
           displayName: 'Demo', 
@@ -70,15 +70,20 @@ const App: React.FC = () => {
         return;
       }
 
+      // MODO NORMAL (FIREBASE)
       if (firebaseEnabled) {
         try {
           const { getAuth, onAuthStateChanged } = await import('firebase/auth');
-          // Fix: cast dynamic firestore import to any to avoid "Property does not exist on type { default: ... }" error
           const { getFirestore, doc, onSnapshot } = (await import('firebase/firestore')) as any;
           const { app } = await import('./lib/firebase');
           
-          const auth = getAuth(app!);
-          const db = getFirestore(app!);
+          if (!app) {
+            setLoading(false);
+            return;
+          }
+
+          const auth = getAuth(app);
+          const db = getFirestore(app);
 
           unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
@@ -86,7 +91,10 @@ const App: React.FC = () => {
               onSnapshot(doc(db, 'users', currentUser.uid), (snapshot: any) => {
                 if (snapshot.exists()) setUserProfile(snapshot.data());
                 setLoading(false);
-              }, () => setLoading(false));
+              }, (err: any) => {
+                console.warn("Snap erro:", err);
+                setLoading(false);
+              });
             } else {
               setUserProfile(null);
               setLoading(false);
@@ -97,6 +105,7 @@ const App: React.FC = () => {
           setLoading(false);
         }
       } else {
+        // Se Firebase não inicializar e não for preview (raro)
         setLoading(false);
       }
     };
@@ -109,8 +118,8 @@ const App: React.FC = () => {
     <ToastProvider>
       <AuthContext.Provider value={{ user, loading, userProfile, isPreview: isPreviewMode }}>
         {isPreviewMode && (
-          <div className="bg-amber-500 text-white text-[10px] font-bold py-1 px-4 text-center sticky top-0 z-[999]">
-            Modo Preview — Dados de demonstração (salvos localmente)
+          <div className="bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 text-center sticky top-0 z-[999] shadow-md">
+            Modo Preview (DEMO) — Dados locais salvos no navegador
           </div>
         )}
         <Routes>

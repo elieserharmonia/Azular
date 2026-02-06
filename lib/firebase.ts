@@ -12,11 +12,11 @@ const firebaseConfig = {
   appId: "1:903140061132:web:20611e8ba37400fce0f769",
 };
 
-// Detecção de ambiente segura
 const isPre = isPreview();
 
-// No Preview, NÃO exportamos nenhuma instância funcional do Firebase
+// No Preview, forçamos o desligamento completo do Firebase
 export const app = isPre ? null : (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig));
 export const auth = isPre ? null : (app ? getAuth(app) : null);
+// Cast para any para evitar erros de tipagem ao usar métodos do wildcard firestore
 export const db = isPre ? null : (app ? (firestore as any).getFirestore(app) : null);
 export const firebaseEnabled = !isPre && !!app;

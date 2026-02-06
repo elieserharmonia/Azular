@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, 
-  PlusCircle, 
   CalendarRange, 
   HeartPulse, 
   User,
@@ -18,9 +17,9 @@ const Layout: React.FC = () => {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Removido item 'Lançar' para simplificar o app conforme solicitado
   const navItems = [
     { to: '/app/dashboard', icon: <Home size={24} />, label: 'Início' },
-    { to: '/app/transactions', icon: <PlusCircle size={24} />, label: 'Lançar' },
     { to: '/app/provision', icon: <CalendarRange size={24} />, label: 'Previsão' },
     { to: '/app/restart-plan', icon: <HeartPulse size={24} />, label: 'Recomeço' },
     { to: '/app/profile', icon: <User size={24} />, label: 'Perfil' },

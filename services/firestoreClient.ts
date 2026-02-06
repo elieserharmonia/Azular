@@ -4,7 +4,8 @@ import { app, firebaseEnabled } from "../lib/firebase";
 let dbInstance: any = null;
 
 /**
- * ⚠️ IMPORTANTE: Firestore é carregado sob demanda.
+ * Retorna a instância do DB apenas se o Firebase estiver habilitado.
+ * Lança erro específico para ser capturado pela fachada de dados.
  */
 export async function getDb() {
   if (!firebaseEnabled) {
@@ -13,14 +14,18 @@ export async function getDb() {
 
   if (dbInstance) return dbInstance;
 
-  // Fix: cast dynamic firestore import to any to resolve property access errors
-  const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } = (await import("firebase/firestore")) as any;
-  
-  dbInstance = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
+  try {
+    const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } = (await import("firebase/firestore")) as any;
+    
+    dbInstance = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
 
-  return dbInstance;
+    return dbInstance;
+  } catch (e) {
+    console.warn("Falha ao inicializar Firestore:", e);
+    throw e;
+  }
 }

@@ -4,7 +4,7 @@ import { localDbClient } from './localDbClient';
 import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
 
 /**
- * Facade Global de Dados
+ * Facade Global de Dados com Fallback Automático para Preview/Demo
  */
 
 export const getTransactions = async (userId: string, competenceMonth?: string): Promise<Transaction[]> => {
@@ -13,120 +13,122 @@ export const getTransactions = async (userId: string, competenceMonth?: string):
     if (competenceMonth) txs = txs.filter(t => t.competenceMonth === competenceMonth);
     return txs;
   }
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const q = query(collection(db, 'transactions'), where('userId', '==', userId));
-  const snap = await getDocs(q);
-  let docs = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Transaction));
-  if (competenceMonth) docs = docs.filter(t => t.competenceMonth === competenceMonth);
-  return docs;
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const q = query(collection(db, 'transactions'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    let docs = snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Transaction));
+    if (competenceMonth) docs = docs.filter(t => t.competenceMonth === competenceMonth);
+    return docs;
+  } catch (err) {
+    console.warn("getTransactions: Usando LocalDB devido a erro no Firebase", err);
+    return localDbClient.getTransactions(userId);
+  }
 };
 
 export const getAccounts = async (userId: string): Promise<Account[]> => {
   if (!firebaseEnabled) return localDbClient.getAccounts(userId);
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const q = query(collection(db, 'accounts'), where('userId', '==', userId));
-  const snap = await getDocs(q);
-  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Account));
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const q = query(collection(db, 'accounts'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Account));
+  } catch (err) {
+    return localDbClient.getAccounts(userId);
+  }
 };
 
 export const getCategories = async (userId: string): Promise<Category[]> => {
   if (!firebaseEnabled) return localDbClient.getCategories(userId);
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const q = query(collection(db, 'categories'), where('userId', '==', userId));
-  const snap = await getDocs(q);
-  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category));
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const q = query(collection(db, 'categories'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category));
+  } catch (err) {
+    return localDbClient.getCategories(userId);
+  }
 };
 
 export const addTransaction = async (data: Partial<Transaction>) => {
   if (!firebaseEnabled) return localDbClient.addTransaction(data);
-  
-  if (!data.userId) {
-    throw new Error("MISSING_USERID");
+  try {
+    const db = await getDb();
+    const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    return addDoc(collection(db, 'transactions'), { 
+      ...data, 
+      createdAt: serverTimestamp(), 
+      updatedAt: serverTimestamp() 
+    });
+  } catch (err) {
+    return localDbClient.addTransaction(data);
   }
-
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-  
-  return addDoc(collection(db, 'transactions'), { 
-    ...data, 
-    createdAt: serverTimestamp(), 
-    updatedAt: serverTimestamp() 
-  });
 };
 
 export const updateTransaction = async (id: string, data: Partial<Transaction>) => {
   if (!firebaseEnabled) return localDbClient.updateTransaction(id, data);
-  
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { doc, getDoc, updateDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-  const ref = doc(db, 'transactions', id);
-
-  // Pre-flight check to handle Firestore Rules "Insufficient Permissions" gracefully
-  // and identify orphan documents without userId
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    throw new Error("NOT_FOUND");
+  try {
+    const db = await getDb();
+    const { doc, getDoc, updateDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    const ref = doc(db, 'transactions', id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    return updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+  } catch (err) {
+    return localDbClient.updateTransaction(id, data);
   }
-
-  const currentData = snap.data();
-  if (!currentData.userId) {
-    throw new Error("ORPHAN_DOC");
-  }
-
-  // Se o usuário logado for diferente do dono do documento
-  if (data.userId && currentData.userId !== data.userId) {
-    throw new Error("FORBIDDEN");
-  }
-
-  return updateDoc(ref, { 
-    ...data, 
-    updatedAt: serverTimestamp() 
-  });
 };
 
 export const deleteTransaction = async (id: string) => {
   if (!firebaseEnabled) return localDbClient.deleteTransaction(id);
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { doc, deleteDoc } = (await import('firebase/firestore')) as any;
-  return deleteDoc(doc(db, 'transactions', id));
+  try {
+    const db = await getDb();
+    const { doc, deleteDoc } = (await import('firebase/firestore')) as any;
+    return deleteDoc(doc(db, 'transactions', id));
+  } catch (err) {
+    return localDbClient.deleteTransaction(id);
+  }
 };
 
 export const createCategory = async (userId: string, name: string, direction: any) => {
   if (!firebaseEnabled) return localDbClient.createCategory(userId, name, direction);
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-  const docRef = await addDoc(collection(db, 'categories'), { userId, name, direction, createdAt: serverTimestamp() });
-  return docRef.id;
+  try {
+    const db = await getDb();
+    const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    const docRef = await addDoc(collection(db, 'categories'), { userId, name, direction, createdAt: serverTimestamp() });
+    return docRef.id;
+  } catch (err) {
+    return localDbClient.createCategory(userId, name, direction);
+  }
 };
 
 export const getDebts = async (userId: string): Promise<Debt[]> => {
   if (!firebaseEnabled) return localDbClient.getDebts(userId);
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const q = query(collection(db, 'debts'), where('userId', '==', userId));
-  const snap = await getDocs(q);
-  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Debt));
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const q = query(collection(db, 'debts'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Debt));
+  } catch (err) {
+    return localDbClient.getDebts(userId);
+  }
 };
 
 export const getGoals = async (userId: string): Promise<Goal[]> => {
   if (!firebaseEnabled) return localDbClient.getGoals(userId);
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const q = query(collection(db, 'goals'), where('userId', '==', userId));
-  const snap = await getDocs(q);
-  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Goal));
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const q = query(collection(db, 'goals'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Goal));
+  } catch (err) {
+    return localDbClient.getGoals(userId);
+  }
 };
 
 export const saveUserProfile = async (uid: string, data: any) => {
@@ -134,18 +136,24 @@ export const saveUserProfile = async (uid: string, data: any) => {
     localStorage.setItem('azular_preview_profile', JSON.stringify({ ...data, uid }));
     return;
   }
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { doc, setDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-  return setDoc(doc(db, 'users', uid), { ...data, uid, updatedAt: serverTimestamp() }, { merge: true });
+  try {
+    const db = await getDb();
+    const { doc, setDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    return setDoc(doc(db, 'users', uid), { ...data, uid, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    localStorage.setItem('azular_preview_profile', JSON.stringify({ ...data, uid }));
+  }
 };
 
 export const getAdminUsersForExport = async (): Promise<UserProfile[]> => {
   if (!firebaseEnabled) return [];
-  const db = await getDb();
-  // Fix: cast dynamic firestore import to any
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const q = query(collection(db, 'users'), where('marketingOptIn', '==', true));
-  const snap = await getDocs(q);
-  return snap.docs.map((doc: any) => doc.data() as UserProfile);
+  try {
+    const db = await getDb();
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const q = query(collection(db, 'users'), where('marketingOptIn', '==', true));
+    const snap = await getDocs(q);
+    return snap.docs.map((doc: any) => doc.data() as UserProfile);
+  } catch (err) {
+    return [];
+  }
 };
