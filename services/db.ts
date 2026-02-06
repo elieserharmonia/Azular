@@ -4,9 +4,124 @@ import { getDb } from './firestoreClient';
 import { localDbClient } from './localDbClient';
 import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
 import { addMonthsToMonthKey } from '../utils/formatters';
+import { parseNumericValue } from '../utils/number';
 
 /**
- * Facade Global de Dados com suporte a Séries Recorrentes
+ * TAREFA A - GARANTIR CONSISTÊNCIA DA SÉRIE
+ * Localiza itens que deveriam estar no mesmo grupo mas estão "órfãos".
+ */
+export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<string> => {
+  const uid = currentDoc.userId;
+  const groupId = currentDoc.recurrenceGroupId || `rg-${Math.random().toString(36).substring(2, 9)}`;
+
+  // 1. Verificar se o grupo já é consistente (tem > 1 item)
+  const allTxs = await getTransactions(uid);
+  const existingInGroup = allTxs.filter(t => t.recurrenceGroupId === currentDoc.recurrenceGroupId && t.recurrenceGroupId);
+
+  if (existingInGroup.length > 1) {
+    console.log(`[SeriesSync] Grupo ${groupId} já é consistente com ${existingInGroup.length} itens.`);
+    return groupId;
+  }
+
+  // 2. Se só tem 1 item ou nenhum groupId, buscar "irmãos" por características
+  console.log(`[SeriesSync] Corrigindo série para: ${currentDoc.description}`);
+  
+  const amount = parseNumericValue(currentDoc.plannedAmount || currentDoc.amount);
+  
+  // Candidatos: Mesmo User, Status Planned, Mesmo Tipo, Mesma Descrição, Mesmo Valor
+  const candidates = allTxs.filter(t => 
+    t.userId === uid &&
+    t.status === 'planned' &&
+    t.type === currentDoc.type &&
+    t.description.toLowerCase().trim() === currentDoc.description.toLowerCase().trim() &&
+    parseNumericValue(t.plannedAmount || t.amount) === amount &&
+    t.categoryId === currentDoc.categoryId
+  );
+
+  if (candidates.length <= 1) {
+    return groupId; // Não encontrou irmãos
+  }
+
+  // 3. Atualizar todos os candidatos com o novo/existente groupId
+  const targetIds = candidates.map(c => c.id!).filter(id => !!id);
+  
+  if (firebaseEnabled) {
+    const db = await getDb();
+    const { doc, writeBatch, serverTimestamp } = (await import('firebase/firestore')) as any;
+    const batch = writeBatch(db);
+    targetIds.forEach(id => {
+      batch.update(doc(db, 'transactions', id), {
+        recurrenceGroupId: groupId,
+        isRecurring: true,
+        updatedAt: serverTimestamp()
+      });
+    });
+    await batch.commit();
+  } else {
+    await localDbClient.bulkUpdateTransactions(targetIds, { 
+      recurrenceGroupId: groupId, 
+      isRecurring: true 
+    });
+  }
+
+  console.log(`[SeriesSync] Série unificada com ${targetIds.length} meses.`);
+  return groupId;
+};
+
+/**
+ * TAREFA B - EXCLUIR RECORRÊNCIA EM LOTE
+ */
+export const deleteRecurringSeries = async (params: {
+  currentTx: Transaction,
+  mode: 'single' | 'from' | 'all' | 'range',
+  fromMonth?: string,
+  toMonth?: string
+}) => {
+  const { currentTx, mode, fromMonth, toMonth } = params;
+  
+  // Primeiro, garante que a série está consistente
+  const groupId = await ensureSeriesConsistency(currentTx);
+  
+  // Busca transações atualizadas (após sync)
+  const allTxs = await getTransactions(currentTx.userId);
+  const series = allTxs.filter(t => t.recurrenceGroupId === groupId);
+
+  let targetIds: string[] = [];
+
+  switch (mode) {
+    case 'single':
+      targetIds = [currentTx.id!];
+      break;
+    case 'from':
+      const start = fromMonth || currentTx.competenceMonth;
+      targetIds = series.filter(t => t.competenceMonth >= start).map(t => t.id!);
+      break;
+    case 'all':
+      targetIds = series.map(t => t.id!);
+      break;
+    case 'range':
+      if (fromMonth && toMonth) {
+        targetIds = series.filter(t => t.competenceMonth >= fromMonth && t.competenceMonth <= toMonth).map(t => t.id!);
+      }
+      break;
+  }
+
+  if (targetIds.length === 0) return { deletedCount: 0 };
+
+  if (firebaseEnabled) {
+    const db = await getDb();
+    const { doc, writeBatch } = (await import('firebase/firestore')) as any;
+    const batch = writeBatch(db);
+    targetIds.forEach(id => batch.delete(doc(db, 'transactions', id)));
+    await batch.commit();
+    return { deletedCount: targetIds.length };
+  } else {
+    return localDbClient.bulkDeleteTransactions(targetIds);
+  }
+};
+
+/**
+ * FUNÇÕES DE ACESSO A DADOS (REPASSES)
  */
 
 export const getTransactions = async (userId: string, competenceMonth?: string): Promise<Transaction[]> => {
@@ -24,7 +139,6 @@ export const getTransactions = async (userId: string, competenceMonth?: string):
     if (competenceMonth) docs = docs.filter(t => t.competenceMonth === competenceMonth);
     return docs;
   } catch (err) {
-    console.warn("getTransactions: Usando LocalDB devido a erro no Firebase", err);
     return localDbClient.getTransactions(userId);
   }
 };
@@ -103,9 +217,6 @@ export const addTransaction = async (data: Partial<Transaction>) => {
   }
 };
 
-/**
- * SALVAR SÉRIE DE PREVISÕES
- */
 export const addProvisionSeries = async (payloadBase: Partial<Transaction>) => {
   const startMonth = payloadBase.competenceMonth || '';
   const mode = payloadBase.recurrenceMode || 'none';
@@ -136,94 +247,33 @@ export const addProvisionSeries = async (payloadBase: Partial<Transaction>) => {
   return Promise.all(promises);
 };
 
-/**
- * ATUALIZAR SÉRIE DE PREVISÕES (Lote)
- */
 export const updateProvisionSeries = async (
   currentTx: Transaction, 
   updatedFields: Partial<Transaction>, 
   scope: 'current' | 'forward' | 'all'
 ) => {
-  if (!currentTx.recurrenceGroupId) return updateTransaction(currentTx.id!, updatedFields);
-
+  // Antes de atualizar, sincroniza a série se necessário
+  const groupId = await ensureSeriesConsistency(currentTx);
   const txs = await getTransactions(currentTx.userId);
-  const series = txs.filter(t => t.recurrenceGroupId === currentTx.recurrenceGroupId);
+  const series = txs.filter(t => t.recurrenceGroupId === groupId);
   
-  let targetTxs = [];
+  let targetIds: string[] = [];
   if (scope === 'current') {
-    targetTxs = series.filter(t => t.id === currentTx.id);
+    targetIds = [currentTx.id!];
   } else if (scope === 'forward') {
-    targetTxs = series.filter(t => t.competenceMonth >= currentTx.competenceMonth);
+    targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
   } else if (scope === 'all') {
-    targetTxs = series;
+    targetIds = series.map(t => t.id!);
   }
 
-  const targetIds = targetTxs.map(t => t.id!).filter(id => !!id);
-
-  if (!firebaseEnabled) {
-    return localDbClient.bulkUpdateTransactions(targetIds, updatedFields);
-  }
-
-  const promises = targetIds.map(id => updateTransaction(id, updatedFields));
-  return Promise.all(promises);
-};
-
-/**
- * EXCLUIR SÉRIE DE PREVISÕES (Lote Atômico)
- * Esta função corrige o bug de apagar apenas o mês atual.
- */
-export const deleteProvisionSeries = async (
-  currentTx: Transaction, 
-  scope: 'current' | 'forward' | 'all' | 'range',
-  range?: { from: string, to: string }
-) => {
-  // Se não tem grupo, é um item avulso
-  if (!currentTx.recurrenceGroupId) {
-    return deleteTransaction(currentTx.id!);
-  }
-
-  // 1. Buscar TODOS os itens da série do usuário
-  const allTxs = await getTransactions(currentTx.userId);
-  const series = allTxs.filter(t => t.recurrenceGroupId === currentTx.recurrenceGroupId);
-  
-  // 2. Filtrar IDs com base no alcance escolhido
-  let targetTxs = [];
-  if (scope === 'current') {
-    targetTxs = series.filter(t => t.id === currentTx.id);
-  } else if (scope === 'forward') {
-    targetTxs = series.filter(t => t.competenceMonth >= currentTx.competenceMonth);
-  } else if (scope === 'all') {
-    targetTxs = series;
-  } else if (scope === 'range' && range) {
-    targetTxs = series.filter(t => 
-      t.competenceMonth >= range.from && 
-      t.competenceMonth <= range.to
-    );
-  }
-
-  const targetIds = targetTxs.map(t => t.id!).filter(id => !!id);
-  if (targetIds.length === 0) return true;
-
-  // 3. Executar a exclusão conforme o motor de dados (Local vs Firestore)
-  if (!firebaseEnabled) {
-    return localDbClient.bulkDeleteTransactions(targetIds);
-  }
-
-  try {
+  if (firebaseEnabled) {
     const db = await getDb();
-    const { doc, writeBatch } = (await import('firebase/firestore')) as any;
+    const { doc, writeBatch, serverTimestamp } = (await import('firebase/firestore')) as any;
     const batch = writeBatch(db);
-    
-    targetIds.forEach(id => {
-      const ref = doc(db, 'transactions', id);
-      batch.delete(ref);
-    });
-
+    targetIds.forEach(id => batch.update(doc(db, 'transactions', id), { ...updatedFields, updatedAt: serverTimestamp() }));
     await batch.commit();
-    return true;
-  } catch (err) {
-    console.error("Erro no deleteProvisionSeries (Firestore):", err);
-    throw err;
+  } else {
+    await localDbClient.bulkUpdateTransactions(targetIds, updatedFields);
   }
 };
 
@@ -231,11 +281,8 @@ export const updateTransaction = async (id: string, data: Partial<Transaction>) 
   if (!firebaseEnabled) return localDbClient.updateTransaction(id, data);
   try {
     const db = await getDb();
-    const { doc, getDoc, updateDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-    const ref = doc(db, 'transactions', id);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) throw new Error("NOT_FOUND");
-    return updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+    const { doc, updateDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    return updateDoc(doc(db, 'transactions', id), { ...data, updatedAt: serverTimestamp() });
   } catch (err) {
     return localDbClient.updateTransaction(id, data);
   }

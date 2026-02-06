@@ -9,7 +9,7 @@ import {
   getCategories, 
   addProvisionSeries,
   updateProvisionSeries,
-  deleteProvisionSeries
+  deleteRecurringSeries
 } from '../services/db';
 import { Transaction, Account, Category } from '../types';
 import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatters';
@@ -37,7 +37,6 @@ const Provision: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [scopeAction, setScopeAction] = useState<'update' | 'delete'>('update');
 
-  // Intervalo customizado para exclusão
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [showRangeInputs, setShowRangeInputs] = useState(false);
@@ -57,7 +56,6 @@ const Provision: React.FC = () => {
       setLoading(false);
       return;
     }
-    
     setLoading(true);
     try {
       const [txs, accs, cats] = await Promise.all([
@@ -65,7 +63,6 @@ const Provision: React.FC = () => {
         getAccounts(uid).catch(() => []),
         getCategories(uid).catch(() => [])
       ]);
-      
       setTransactions(txs || []);
       setAccounts(accs || []);
       setCategories(cats || []);
@@ -78,20 +75,16 @@ const Provision: React.FC = () => {
 
   const tableData = useMemo(() => {
     const plannedTxs = transactions.filter(t => (t.status === 'planned' || t.isFixed));
-    
     const buildGroupedData = (list: Transaction[], type: 'credit' | 'debit') => {
       const filtered = list.filter(t => t.type === type);
       const catIds = Array.from(new Set(filtered.map(t => t.categoryId)));
-      
       return catIds.map(catId => {
         const catName = categories.find(c => c.id === catId)?.name || 'Outros';
         const catItems = filtered.filter(t => t.categoryId === catId);
         const descriptions = Array.from(new Set(catItems.map(t => t.description)));
-        
         const rows = descriptions.map(desc => {
           const values: Record<string, number> = {};
           const originals: Record<string, Transaction | null> = {};
-          
           tableMonths.forEach(m => {
             const items = catItems.filter(t => t.description === desc && t.competenceMonth === m);
             values[m] = items.reduce((sum, it) => sum + parseNumericValue(it.plannedAmount || it.amount), 0);
@@ -99,19 +92,13 @@ const Provision: React.FC = () => {
           });
           return { name: desc, values, originals };
         });
-
         const catTotals: Record<string, number> = {};
-        tableMonths.forEach(m => {
-          catTotals[m] = rows.reduce((sum, r) => sum + r.values[m], 0);
-        });
-
+        tableMonths.forEach(m => { catTotals[m] = rows.reduce((sum, r) => sum + r.values[m], 0); });
         return { catId, catName, rows, catTotals };
       }).filter(g => g.rows.some(r => Object.values(r.values).some(v => v > 0)));
     };
-
     const entryGroups = buildGroupedData(plannedTxs, 'credit');
     const exitGroups = buildGroupedData(plannedTxs, 'debit');
-
     const accumulated: Record<string, number> = {};
     let running = 0;
     tableMonths.forEach(m => {
@@ -120,16 +107,12 @@ const Provision: React.FC = () => {
       running += (inM - outM);
       accumulated[m] = running;
     });
-
     return { entryGroups, exitGroups, accumulated };
   }, [transactions, tableMonths, categories]);
 
   const handleOpenEdit = (tx: Transaction) => {
     setEditingItem(tx);
-    setFormData({
-      ...tx,
-      plannedAmount: parseNumericValue(tx.plannedAmount || tx.amount) as any
-    });
+    setFormData({ ...tx, plannedAmount: parseNumericValue(tx.plannedAmount || tx.amount) as any });
     setShowRangeInputs(false);
     setShowProvisionModal(true);
   };
@@ -137,33 +120,29 @@ const Provision: React.FC = () => {
   const confirmAction = async (scope: 'current' | 'forward' | 'all' | 'range') => {
     if (!uid) return;
     setIsSaving(true);
-    
     try {
       if (scopeAction === 'update') {
         const amountVal = parseNumericValue(formData.plannedAmount);
         const payload = { ...formData, plannedAmount: amountVal, userId: uid, updatedAt: new Date().toISOString() };
-        
-        if (editingItem?.recurrenceGroupId) {
-          await updateProvisionSeries(editingItem, payload, scope === 'range' ? 'all' : scope);
-        } else if (editingItem?.id) {
-          await updateTransaction(editingItem.id, payload);
+        if (editingItem?.id) {
+          await updateProvisionSeries(editingItem, payload, scope === 'range' ? 'all' : (scope as any));
         }
-        notifySuccess("Alteração aplicada!");
+        notifySuccess("Série atualizada!");
       } else {
-        // EXCLUSÃO
-        await deleteProvisionSeries(
-          editingItem!, 
-          scope, 
-          scope === 'range' ? { from: rangeStart, to: rangeEnd } : undefined
-        );
-        notifySuccess("Exclusão concluída!");
+        // EXCLUSÃO RECORRENTE (TAREFA B & C)
+        const result = await deleteRecurringSeries({
+          currentTx: editingItem!,
+          mode: scope as any,
+          fromMonth: scope === 'range' ? rangeStart : editingItem?.competenceMonth,
+          toMonth: scope === 'range' ? rangeEnd : undefined
+        });
+        notifySuccess(`Removido(s) ${result.deletedCount} lançamento(s).`);
       }
-      
       setShowProvisionModal(false);
       setShowScopeModal(false);
       loadData();
     } catch (err) {
-      notifyError("Erro ao processar sua solicitação.");
+      notifyError("Erro ao processar solicitação.");
     } finally {
       setIsSaving(false);
     }
@@ -172,15 +151,18 @@ const Provision: React.FC = () => {
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uid) return;
-    
     const amountVal = parseNumericValue(formData.plannedAmount);
     if (isNaN(amountVal) || amountVal <= 0) return notifyInfo("Informe um valor válido.");
 
-    if (editingItem?.recurrenceGroupId) {
-      setScopeAction('update');
-      setShowScopeModal(true);
+    if (editingItem) {
+       setScopeAction('update');
+       setShowScopeModal(true);
     } else {
-      confirmAction('current');
+       if (formData.isRecurring) await addProvisionSeries({ ...formData, plannedAmount: amountVal, userId: uid });
+       else await addTransaction({ ...formData, plannedAmount: amountVal, userId: uid, status: 'planned' });
+       notifySuccess("Plano salvo!");
+       setShowProvisionModal(false);
+       loadData();
     }
   };
 
@@ -192,26 +174,16 @@ const Provision: React.FC = () => {
   return (
     <div className="space-y-6 pb-32">
       <header className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">Previsão</h2>
-        </div>
-        
+        <div><h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">Previsão</h2></div>
         <div className="flex items-center gap-3 bg-white p-2 rounded-[1.5rem] shadow-sm border border-blue-50">
-          <button onClick={() => setSelectedYear(y => y - 1)} className="p-2 hover:bg-blue-50 rounded-xl transition-colors"><ChevronLeft size={20} /></button>
+          <button onClick={() => setSelectedYear(y => y - 1)} className="p-2 hover:bg-blue-50 rounded-xl"><ChevronLeft size={20} /></button>
           <span className="text-sm font-black text-gray-900">{selectedYear}</span>
-          <button onClick={() => setSelectedYear(y => y + 1)} className="p-2 hover:bg-blue-50 rounded-xl transition-colors"><ChevronRight size={20} /></button>
-          
+          <button onClick={() => setSelectedYear(y => y + 1)} className="p-2 hover:bg-blue-50 rounded-xl"><ChevronRight size={20} /></button>
           <button 
-            disabled={loading || !uid}
-            onClick={() => { 
-              setFormData({ type: 'debit', competenceMonth: getCurrentMonth(), isRecurring: false, recurrenceMode: 'none' }); 
-              setEditingItem(null);
-              setShowProvisionModal(true); 
-            }} 
+            disabled={loading}
+            onClick={() => { setFormData({ type: 'debit', competenceMonth: getCurrentMonth() }); setEditingItem(null); setShowProvisionModal(true); }} 
             className="ml-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2"
-          >
-            <Plus size={14} /> Novo Plano
-          </button>
+          ><Plus size={14} /> Novo Plano</button>
         </div>
       </header>
 
@@ -254,7 +226,7 @@ const Provision: React.FC = () => {
                             <td key={m} onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)} className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}>
                               <div className="flex flex-col items-center gap-0.5">
                                 {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
-                                {row.originals[m]?.recurrenceGroupId && <Repeat size={8} className="text-blue-400" />}
+                                {(row.originals[m]?.isRecurring || row.originals[m]?.recurrenceGroupId) && <Repeat size={8} className="text-blue-400" />}
                               </div>
                             </td>
                           ))}
@@ -281,7 +253,7 @@ const Provision: React.FC = () => {
                             <td key={m} onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)} className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}>
                               <div className="flex flex-col items-center gap-0.5">
                                 {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
-                                {row.originals[m]?.recurrenceGroupId && <Repeat size={8} className="text-blue-400" />}
+                                {(row.originals[m]?.isRecurring || row.originals[m]?.recurrenceGroupId) && <Repeat size={8} className="text-blue-400" />}
                               </div>
                             </td>
                           ))}
@@ -305,7 +277,6 @@ const Provision: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal de Previsão */}
       {showProvisionModal && (
         <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-8 relative border-2 border-blue-50 overflow-y-auto max-h-[90vh]">
@@ -313,18 +284,15 @@ const Provision: React.FC = () => {
               <h3 className="text-xl font-black uppercase tracking-tighter">{editingItem ? 'Editar Plano' : 'Novo Plano'}</h3>
               <button onClick={() => setShowProvisionModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={24} /></button>
             </div>
-            
             <form onSubmit={handleSaveProvision} className="space-y-6">
               <div className="flex p-1.5 bg-blue-50 rounded-2xl">
                 <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>Entrada</button>
                 <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}>Saída</button>
               </div>
-
               <div>
                 <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Descrição</label>
                 <input required type="text" className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Valor</label>
@@ -335,7 +303,6 @@ const Provision: React.FC = () => {
                   <input required type="month" className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none bg-transparent" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
                 </div>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <select required className="w-full font-black border-b-2 border-blue-50 bg-transparent outline-none pb-2" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
                   <option value="">Conta...</option>
@@ -343,7 +310,6 @@ const Provision: React.FC = () => {
                 </select>
                 <CategorySelect userId={uid!} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
               </div>
-
               {!editingItem && (
                 <div className="p-5 bg-gray-50 rounded-3xl border-2 border-gray-100 space-y-4">
                   <label className="flex items-center justify-between cursor-pointer">
@@ -365,7 +331,6 @@ const Provision: React.FC = () => {
                   )}
                 </div>
               )}
-
               <div className="flex gap-4 pt-4">
                 {editingItem && (
                   <button type="button" onClick={() => { setScopeAction('delete'); setShowScopeModal(true); }} className="flex-1 py-4 text-red-500 font-black uppercase text-[10px] hover:bg-red-50 rounded-2xl flex items-center justify-center gap-2">
@@ -381,7 +346,6 @@ const Provision: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Alcance (Scope) - Corrigido para Excluir em Série */}
       {showScopeModal && (
         <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-xl z-[110] flex items-center justify-center p-6">
           <div className="bg-white rounded-[3rem] w-full max-w-sm shadow-2xl p-10 space-y-6">
@@ -390,38 +354,29 @@ const Provision: React.FC = () => {
               <h4 className="text-xl font-black uppercase tracking-tighter">{scopeAction === 'update' ? 'Atualizar Série' : 'Excluir Série'}</h4>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Escolha o alcance da operação.</p>
             </div>
-
             <div className="space-y-3">
-              <button onClick={() => confirmAction('current')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between group transition-all">
+              <button onClick={() => confirmAction('current')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
                 Somente este mês
               </button>
-              <button onClick={() => confirmAction('forward')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between group transition-all">
+              <button onClick={() => confirmAction('forward')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
                 Deste mês em diante
               </button>
-              <button onClick={() => confirmAction('all')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between group transition-all">
+              <button onClick={() => confirmAction('all')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
                 Toda a série
               </button>
-              
-              {/* Opção de Intervalo Customizado */}
               <button onClick={() => setShowRangeInputs(!showRangeInputs)} className="w-full py-4 px-6 bg-gray-50 border-2 border-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-400 flex items-center justify-between">
                 Escolher Intervalo...
               </button>
-
               {showRangeInputs && (
                 <div className="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-4 animate-in slide-in-from-top-2">
                    <div className="grid grid-cols-2 gap-2">
                      <input type="month" value={rangeStart} onChange={e => setRangeStart(e.target.value)} className="w-full p-2 text-[10px] font-black uppercase border rounded-lg" placeholder="Início" />
                      <input type="month" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className="w-full p-2 text-[10px] font-black uppercase border rounded-lg" placeholder="Fim" />
                    </div>
-                   <button 
-                    disabled={!rangeStart || !rangeEnd}
-                    onClick={() => confirmAction('range')}
-                    className="w-full py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-30"
-                   >Confirmar Intervalo</button>
+                   <button disabled={!rangeStart || !rangeEnd} onClick={() => confirmAction('range')} className="w-full py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-30">Confirmar Intervalo</button>
                 </div>
               )}
             </div>
-
             <div className="pt-4 text-center">
               <button onClick={() => setShowScopeModal(false)} className="text-[10px] font-black uppercase text-gray-300">Voltar</button>
             </div>

@@ -111,35 +111,13 @@ export const localDbClient = {
     setLS('transactions', items.filter(t => t.id !== id));
   },
 
-  /**
-   * EXCLUSÃO EM LOTE (PREVIEW/LOCAL)
-   * Resolve o bug de apagar apenas o mês atual no modo demonstração.
-   */
   bulkDeleteTransactions: async (ids: string[]) => {
     const items = getLS<any[]>('transactions', []);
     const remaining = items.filter(t => !ids.includes(t.id!));
     setLS('transactions', remaining);
-    return true;
-  },
-
-  getProvisions: async (userId: string) => {
-    const txs = getLS<Transaction[]>('transactions', []);
-    return txs.filter(t => t.status === 'planned');
+    return { deletedCount: items.length - remaining.length };
   },
 
   getDebts: async (userId: string): Promise<Debt[]> => getLS<Debt[]>('debts', []),
-  addDebt: async (data: any) => {
-    const items = getLS<any[]>('debts', []);
-    const newItem = { ...data, id: `debt-${Date.now()}`, createdAt: new Date().toISOString() };
-    setLS('debts', [...items, newItem]);
-    return newItem;
-  },
-
-  getGoals: async (userId: string): Promise<Goal[]> => getLS<Goal[]>('goals', []),
-  addGoal: async (data: any) => {
-    const items = getLS<any[]>('goals', []);
-    const newItem = { ...data, id: `goal-${Date.now()}`, createdAt: new Date().toISOString() };
-    setLS('goals', [...items, newItem]);
-    return newItem;
-  }
+  getGoals: async (userId: string): Promise<Goal[]> => getLS<Goal[]>('goals', [])
 };
