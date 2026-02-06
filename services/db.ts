@@ -1,10 +1,12 @@
+
 import { firebaseEnabled } from '../lib/firebase';
 import { getDb } from './firestoreClient';
 import { localDbClient } from './localDbClient';
 import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
+import { addMonthsToMonthKey } from '../utils/formatters';
 
 /**
- * Facade Global de Dados com Fallback Automático para Preview/Demo
+ * Facade Global de Dados com suporte a Séries Recorrentes
  */
 
 export const getTransactions = async (userId: string, competenceMonth?: string): Promise<Transaction[]> => {
@@ -99,6 +101,90 @@ export const addTransaction = async (data: Partial<Transaction>) => {
   } catch (err) {
     return localDbClient.addTransaction(data);
   }
+};
+
+/**
+ * SALVAR SÉRIE DE PREVISÕES
+ */
+export const addProvisionSeries = async (payloadBase: Partial<Transaction>) => {
+  const startMonth = payloadBase.competenceMonth || '';
+  const mode = payloadBase.recurrenceMode || 'none';
+  const groupId = Math.random().toString(36).substring(2, 15);
+  
+  let monthsToCreate = 1;
+  if (mode === 'count') {
+    monthsToCreate = payloadBase.recurrenceCount || 1;
+  } else if (mode === 'until') {
+    const end = payloadBase.recurrenceEndMonth || startMonth;
+    const [sY, sM] = startMonth.split('-').map(Number);
+    const [eY, eM] = end.split('-').map(Number);
+    monthsToCreate = (eY - sY) * 12 + (eM - sM) + 1;
+  }
+
+  const promises = [];
+  for (let i = 0; i < monthsToCreate; i++) {
+    const currentMonth = addMonthsToMonthKey(startMonth, i);
+    const item = {
+      ...payloadBase,
+      competenceMonth: currentMonth,
+      recurrenceGroupId: groupId,
+      isRecurring: true,
+      recurrenceStartMonth: startMonth
+    };
+    promises.push(addTransaction(item));
+  }
+  return Promise.all(promises);
+};
+
+/**
+ * ATUALIZAR SÉRIE DE PREVISÕES (Lote)
+ */
+export const updateProvisionSeries = async (
+  currentTx: Transaction, 
+  updatedFields: Partial<Transaction>, 
+  scope: 'current' | 'forward' | 'all'
+) => {
+  if (!currentTx.recurrenceGroupId) return updateTransaction(currentTx.id!, updatedFields);
+
+  const txs = await getTransactions(currentTx.userId);
+  const series = txs.filter(t => t.recurrenceGroupId === currentTx.recurrenceGroupId);
+  
+  let targetTxs = [];
+  if (scope === 'current') {
+    targetTxs = series.filter(t => t.id === currentTx.id);
+  } else if (scope === 'forward') {
+    targetTxs = series.filter(t => t.competenceMonth >= currentTx.competenceMonth);
+  } else if (scope === 'all') {
+    targetTxs = series;
+  }
+
+  const promises = targetTxs.map(t => updateTransaction(t.id!, updatedFields));
+  return Promise.all(promises);
+};
+
+/**
+ * EXCLUIR SÉRIE DE PREVISÕES (Lote)
+ */
+export const deleteProvisionSeries = async (
+  currentTx: Transaction, 
+  scope: 'current' | 'forward' | 'all'
+) => {
+  if (!currentTx.recurrenceGroupId) return deleteTransaction(currentTx.id!);
+
+  const txs = await getTransactions(currentTx.userId);
+  const series = txs.filter(t => t.recurrenceGroupId === currentTx.recurrenceGroupId);
+  
+  let targetTxs = [];
+  if (scope === 'current') {
+    targetTxs = series.filter(t => t.id === currentTx.id);
+  } else if (scope === 'forward') {
+    targetTxs = series.filter(t => t.competenceMonth >= currentTx.competenceMonth);
+  } else if (scope === 'all') {
+    targetTxs = series;
+  }
+
+  const promises = targetTxs.map(t => deleteTransaction(t.id!));
+  return Promise.all(promises);
 };
 
 export const updateTransaction = async (id: string, data: Partial<Transaction>) => {

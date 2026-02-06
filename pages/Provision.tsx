@@ -1,12 +1,22 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { getTransactions, addTransaction, updateTransaction, getAccounts, getCategories } from '../services/db';
+import { 
+  getTransactions, 
+  addTransaction, 
+  updateTransaction, 
+  getAccounts, 
+  getCategories, 
+  addProvisionSeries,
+  updateProvisionSeries,
+  deleteProvisionSeries
+} from '../services/db';
 import { Transaction, Account, Category } from '../types';
 import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { useToast } from '../context/ToastContext';
 import { 
-  ChevronLeft, ChevronRight, Loader2, AlertCircle, Plus, Info
+  ChevronLeft, ChevronRight, Loader2, AlertCircle, Plus, Info, Repeat, Trash2, X, Check
 } from 'lucide-react';
 import CategorySelect from '../components/CategorySelect';
 
@@ -21,11 +31,12 @@ const Provision: React.FC = () => {
   
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showProvisionModal, setShowProvisionModal] = useState(false);
+  const [showScopeModal, setShowScopeModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [formData, setFormData] = useState<Partial<Transaction>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // UID seguro para evitar crashes
+  // UID seguro
   const uid = user?.uid ?? null;
 
   const tableMonths = useMemo(() => {
@@ -34,7 +45,7 @@ const Provision: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [uid]); 
+  }, [uid, selectedYear]); 
 
   const loadData = async () => {
     if (!uid) {
@@ -54,7 +65,6 @@ const Provision: React.FC = () => {
       setAccounts(accs || []);
       setCategories(cats || []);
     } catch (err) {
-      console.error("Erro ao carregar provisões:", err);
       notifyError("Não foi possível carregar os dados financeiros.");
     } finally {
       setLoading(false);
@@ -71,15 +81,20 @@ const Provision: React.FC = () => {
       return catIds.map(catId => {
         const catName = categories.find(c => c.id === catId)?.name || 'Outros';
         const catItems = filtered.filter(t => t.categoryId === catId);
+        
+        // Agrupamos por descrição para mostrar na tabela
         const descriptions = Array.from(new Set(catItems.map(t => t.description)));
         
         const rows = descriptions.map(desc => {
           const values: Record<string, number> = {};
+          const originals: Record<string, Transaction | null> = {};
+          
           tableMonths.forEach(m => {
             const items = catItems.filter(t => t.description === desc && t.competenceMonth === m);
             values[m] = items.reduce((sum, it) => sum + parseNumericValue(it.plannedAmount || it.amount), 0);
+            originals[m] = items[0] || null;
           });
-          return { name: desc, values };
+          return { name: desc, values, originals };
         });
 
         const catTotals: Record<string, number> = {};
@@ -106,43 +121,91 @@ const Provision: React.FC = () => {
     return { entryGroups, exitGroups, accumulated };
   }, [transactions, tableMonths, categories]);
 
-  const handleSaveProvision = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uid) return notifyInfo("Faça login para salvar seus planos.");
-    
-    const amountVal = parseNumericValue(formData.plannedAmount);
-    if (isNaN(amountVal) || amountVal <= 0) {
-      notifyInfo("Informe um valor válido maior que zero.");
-      return;
-    }
+  const handleOpenEdit = (tx: Transaction) => {
+    setEditingItem(tx);
+    setFormData({
+      ...tx,
+      plannedAmount: parseNumericValue(tx.plannedAmount || tx.amount) as any
+    });
+    setShowProvisionModal(true);
+  };
 
+  const confirmSave = async (scope: 'current' | 'forward' | 'all' = 'current') => {
+    if (!uid) return;
     setIsSaving(true);
+    
     try {
+      const amountVal = parseNumericValue(formData.plannedAmount);
       const payload = {
         ...formData,
         plannedAmount: amountVal,
-        amount: 0, 
         userId: uid,
-        status: 'planned' as const
+        status: 'planned' as const,
+        updatedAt: new Date().toISOString()
       };
 
       if (editingItem?.id) {
-        await updateTransaction(editingItem.id, payload);
+        // EDIÇÃO
+        if (editingItem.recurrenceGroupId) {
+          await updateProvisionSeries(editingItem, payload, scope);
+        } else {
+          await updateTransaction(editingItem.id, payload);
+        }
+        notifySuccess("Alteração aplicada!");
       } else {
-        await addTransaction(payload);
+        // CRIAÇÃO
+        if (formData.isRecurring && formData.recurrenceMode !== 'none') {
+          await addProvisionSeries(payload);
+          notifySuccess("Série de previsões criada!");
+        } else {
+          await addTransaction(payload);
+          notifySuccess("Previsão salva!");
+        }
       }
       
-      notifySuccess("Plano salvo!");
       setShowProvisionModal(false);
+      setShowScopeModal(false);
       loadData();
-    } catch (err: any) {
-      notifyError("Erro ao salvar.");
+    } catch (err) {
+      notifyError("Erro ao processar sua solicitação.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Helper para nome do mês abreviado em mobile
+  const handleSaveProvision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uid) return;
+    
+    const amountVal = parseNumericValue(formData.plannedAmount);
+    if (isNaN(amountVal) || amountVal <= 0) {
+      return notifyInfo("Informe um valor válido.");
+    }
+
+    if (editingItem?.recurrenceGroupId) {
+      setShowScopeModal(true);
+    } else {
+      confirmSave('current');
+    }
+  };
+
+  const handleDelete = async (scope: 'current' | 'forward' | 'all' = 'current') => {
+    if (!editingItem) return;
+    
+    setIsSaving(true);
+    try {
+      await deleteProvisionSeries(editingItem, scope);
+      notifySuccess("Exclusão concluída!");
+      setShowProvisionModal(false);
+      setShowScopeModal(false);
+      loadData();
+    } catch (err) {
+      notifyError("Erro ao excluir.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const getShortMonth = (m: string) => {
     const full = getMonthName(m).split(' de ')[0].toUpperCase();
     return full.length > 3 ? full.substring(0, 3) : full;
@@ -167,20 +230,23 @@ const Provision: React.FC = () => {
           <button 
             disabled={loading || !uid}
             onClick={() => { 
-              setFormData({ type: 'debit', competenceMonth: getCurrentMonth() }); 
+              setFormData({ 
+                type: 'debit', 
+                competenceMonth: getCurrentMonth(), 
+                isRecurring: false, 
+                recurrenceMode: 'none' 
+              }); 
               setEditingItem(null);
               setShowProvisionModal(true); 
             }} 
-            className={`ml-4 px-4 md:px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2 transition-all ${
-              !uid ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white active:scale-95'
-            }`}
+            className="ml-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2 active:scale-95 transition-all"
           >
-            <Plus size={14} /> <span className="hidden xs:inline">Novo Plano</span>
+            <Plus size={14} /> Novo Plano
           </button>
         </div>
       </header>
 
-      <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] border-2 border-blue-50 shadow-xl overflow-hidden relative">
+      <div className="bg-white rounded-[2rem] border-2 border-blue-50 shadow-xl overflow-hidden relative">
         <div className="overflow-x-auto no-scrollbar scroll-smooth">
           {loading ? (
              <div className="p-20 text-center flex flex-col items-center gap-4">
@@ -191,9 +257,9 @@ const Provision: React.FC = () => {
             <table className="w-full text-left border-collapse min-w-[800px] md:min-w-[1200px]">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="sticky left-0 z-30 bg-gray-100 px-4 md:px-6 py-4 md:py-5 text-[9px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[120px] md:w-[280px]">DESCRITIVO</th>
+                  <th className="sticky left-0 z-30 bg-gray-100 px-4 py-4 text-[9px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[120px] md:w-[280px]">DESCRITIVO</th>
                   {tableMonths.map(m => (
-                    <th key={m} className={`px-2 md:px-4 py-4 md:py-5 text-[9px] md:text-[10px] font-black uppercase text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'}`}>
+                    <th key={m} className={`px-2 py-4 text-[9px] md:text-[10px] font-black uppercase text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'}`}>
                       <span className="md:hidden">{getShortMonth(m)}</span>
                       <span className="hidden md:inline">{getMonthName(m).split(' de ')[0].toUpperCase()}</span>
                     </th>
@@ -201,51 +267,67 @@ const Provision: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                 {/* Seção Ganhos */}
+                 {/* Ganhos */}
                  <tr className="bg-emerald-600 text-white font-black">
-                   <td className="sticky left-0 bg-emerald-600 px-4 md:px-6 py-2 text-[9px] md:text-[10px] uppercase border-r border-emerald-500 z-20">Ganhos Planejados</td>
+                   <td className="sticky left-0 bg-emerald-600 px-4 py-2 text-[9px] md:text-[10px] uppercase border-r border-emerald-500 z-20">Ganhos Planejados</td>
                    {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                  </tr>
-                 {tableData.entryGroups.length === 0 ? (
-                   <tr>
-                     <td className="sticky left-0 bg-white px-4 md:px-6 py-3 text-[9px] md:text-[10px] font-bold text-gray-300 italic z-20">Sem entradas previstas</td>
-                     {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
-                   </tr>
-                 ) : tableData.entryGroups.map(g => (
+                 {tableData.entryGroups.map(g => (
                     <React.Fragment key={g.catId}>
-                      <tr className="bg-emerald-50/50">
-                        <td className="sticky left-0 bg-[#F4FCF9] px-4 md:px-6 py-2 border-r border-emerald-100 text-[8px] md:text-[9px] font-black text-emerald-700 uppercase z-20">{g.catName}</td>
-                        {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-2 text-center text-[9px] md:text-[10px] font-black text-emerald-800">{formatCurrency(g.catTotals[m])}</td>)}
+                      <tr className="bg-emerald-50/30">
+                        <td className="sticky left-0 bg-[#F4FCF9] px-4 py-2 border-r border-emerald-100 text-[8px] md:text-[9px] font-black text-emerald-700 uppercase z-20">{g.catName}</td>
+                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[9px] md:text-[10px] font-black text-emerald-800">{formatCurrency(g.catTotals[m])}</td>)}
                       </tr>
                       {g.rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                          <td className="sticky left-0 bg-white px-8 md:px-10 py-1.5 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">{row.name}</td>
-                          {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-1.5 text-center text-[8px] md:text-[9px] font-medium text-gray-400">{row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}</td>)}
+                        <tr key={idx} className="hover:bg-gray-50 transition-colors group">
+                          <td className="sticky left-0 bg-white px-8 py-2 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">
+                            {row.name}
+                          </td>
+                          {tableMonths.map(m => (
+                            <td 
+                              key={m} 
+                              onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)}
+                              className={`px-2 py-2 text-center text-[8px] md:text-[9px] font-medium cursor-pointer transition-all ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}
+                            >
+                              <div className="flex flex-col items-center gap-0.5">
+                                {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
+                                {row.originals[m]?.recurrenceGroupId && <Repeat size={8} className="text-blue-400" />}
+                              </div>
+                            </td>
+                          ))}
                         </tr>
                       ))}
                     </React.Fragment>
                  ))}
                  
-                 {/* Seção Gastos */}
+                 {/* Gastos */}
                  <tr className="bg-blue-600 text-white font-black">
-                   <td className="sticky left-0 bg-blue-600 px-4 md:px-6 py-2 text-[9px] md:text-[10px] uppercase border-r border-blue-500 z-20">Gastos Planejados</td>
+                   <td className="sticky left-0 bg-blue-600 px-4 py-2 text-[9px] md:text-[10px] uppercase border-r border-blue-500 z-20">Gastos Planejados</td>
                    {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
                  </tr>
-                 {tableData.exitGroups.length === 0 ? (
-                   <tr>
-                     <td className="sticky left-0 bg-white px-4 md:px-6 py-3 text-[9px] md:text-[10px] font-bold text-gray-300 italic z-20">Sem gastos previstos</td>
-                     {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
-                   </tr>
-                 ) : tableData.exitGroups.map(g => (
+                 {tableData.exitGroups.map(g => (
                     <React.Fragment key={g.catId}>
-                      <tr className="bg-blue-50/50">
-                        <td className="sticky left-0 bg-[#F5F8FF] px-4 md:px-6 py-2 border-r border-blue-100 text-[8px] md:text-[9px] font-black text-blue-700 uppercase z-20">{g.catName}</td>
-                        {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-2 text-center text-[9px] md:text-[10px] font-black text-blue-800">{formatCurrency(g.catTotals[m])}</td>)}
+                      <tr className="bg-blue-50/30">
+                        <td className="sticky left-0 bg-[#F5F8FF] px-4 py-2 border-r border-blue-100 text-[8px] md:text-[9px] font-black text-blue-700 uppercase z-20">{g.catName}</td>
+                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[9px] md:text-[10px] font-black text-blue-800">{formatCurrency(g.catTotals[m])}</td>)}
                       </tr>
                       {g.rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                          <td className="sticky left-0 bg-white px-8 md:px-10 py-1.5 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">{row.name}</td>
-                          {tableMonths.map(m => <td key={m} className="px-2 md:px-4 py-1.5 text-center text-[8px] md:text-[9px] font-medium text-gray-400">{row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}</td>)}
+                        <tr key={idx} className="hover:bg-gray-50 transition-colors group">
+                          <td className="sticky left-0 bg-white px-8 py-2 border-r border-gray-100 text-[8px] md:text-[9px] font-bold text-gray-500 uppercase z-20 truncate">
+                            {row.name}
+                          </td>
+                          {tableMonths.map(m => (
+                            <td 
+                              key={m} 
+                              onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)}
+                              className={`px-2 py-2 text-center text-[8px] md:text-[9px] font-medium cursor-pointer transition-all ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}
+                            >
+                              <div className="flex flex-col items-center gap-0.5">
+                                {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
+                                {row.originals[m]?.recurrenceGroupId && <Repeat size={8} className="text-blue-400" />}
+                              </div>
+                            </td>
+                          ))}
                         </tr>
                       ))}
                     </React.Fragment>
@@ -253,9 +335,9 @@ const Provision: React.FC = () => {
                  
                  {/* Acumulado */}
                  <tr className="bg-slate-900 text-white font-black">
-                   <td className="sticky left-0 bg-slate-900 px-4 md:px-6 py-4 md:py-5 text-[10px] md:text-[11px] uppercase border-r border-slate-700 z-20">Acumulado Previsto</td>
+                   <td className="sticky left-0 bg-slate-900 px-4 py-4 text-[10px] md:text-[11px] uppercase border-r border-slate-700 z-20">Acumulado Previsto</td>
                    {tableMonths.map(m => (
-                     <td key={m} className={`px-2 md:px-4 py-4 md:py-5 text-center text-[10px] md:text-sm font-black ${tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                     <td key={m} className={`px-2 py-4 text-center text-[10px] md:text-sm font-black ${tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                        {formatCurrency(tableData.accumulated[m])}
                      </td>
                    ))}
@@ -266,64 +348,153 @@ const Provision: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-[9px] font-bold text-gray-400 uppercase tracking-widest px-2">
-        <Info size={12} className="text-blue-500" /> Arraste para os lados para ver os meses seguintes.
-      </div>
-
+      {/* Modal de Previsão */}
       {showProvisionModal && (
-        <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] md:rounded-[3rem] w-full max-w-lg shadow-2xl p-6 md:p-10 relative border-2 border-blue-50 animate-in zoom-in duration-300">
-            <h3 className="text-xl md:text-2xl font-black uppercase tracking-tighter mb-8 text-center md:text-left">Planejamento Mensal</h3>
+        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-8 relative border-2 border-blue-50 animate-in zoom-in duration-300 overflow-y-auto max-h-[90vh]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black uppercase tracking-tighter">
+                {editingItem ? 'Editar Plano' : 'Novo Plano'}
+              </h3>
+              <button onClick={() => setShowProvisionModal(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X size={24} />
+              </button>
+            </div>
             
-            {!uid ? (
-              <div className="text-center py-10 space-y-4">
-                <AlertCircle className="text-amber-500 mx-auto mb-2" size={32} />
-                <p className="text-[10px] font-black uppercase text-amber-800 tracking-widest leading-relaxed">
-                  Modo demonstração habilitado.<br/>Entre para salvar.
-                </p>
-                <button type="button" onClick={() => setShowProvisionModal(false)} className="w-full py-4 text-gray-400 font-black uppercase text-[10px]">Fechar</button>
+            <form onSubmit={handleSaveProvision} className="space-y-6">
+              <div className="flex p-1.5 bg-blue-50 rounded-2xl">
+                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>Entrada</button>
+                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl transition-all ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}>Saída</button>
               </div>
-            ) : (
-              <form onSubmit={handleSaveProvision} className="space-y-6">
-                <div className="flex p-2 bg-blue-50 rounded-[1.5rem]">
-                  <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Entrada</button>
-                  <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-[1.2rem] transition-all ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}>Saída</button>
-                </div>
 
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Descrição</label>
+                <input required type="text" className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block tracking-widest">Descrição</label>
-                  <input required type="text" className="w-full text-xl md:text-2xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 transition-colors bg-transparent" placeholder="Ex: Aluguel, Salário..." value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
+                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Valor</label>
+                  <input required type="text" className="w-full text-2xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" placeholder="0,00" value={formData.plannedAmount || ''} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4 md:gap-8">
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block tracking-widest">Valor</label>
-                    <input required type="text" className="w-full text-2xl md:text-3xl font-black border-b-4 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" placeholder="0,00" value={formData.plannedAmount || ''} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block tracking-widest">Mês Alvo</label>
-                    <input required type="month" className="w-full text-lg md:text-xl font-black border-b-4 border-blue-50 pb-2 outline-none bg-transparent" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
-                  </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Mês Alvo</label>
+                  <input required type="month" className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none bg-transparent" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Conta Destino</label>
-                    <select required className="w-full font-black border-b-4 border-blue-50 bg-transparent outline-none pb-2" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-                      <option value="">Selecione...</option>
-                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
-                  </div>
-                  <CategorySelect userId={uid} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">Conta</label>
+                  <select required className="w-full font-black border-b-2 border-blue-50 bg-transparent outline-none pb-2" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
+                    <option value="">Selecione...</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
                 </div>
+                <CategorySelect userId={uid!} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
+              </div>
 
-                <div className="flex gap-4 pt-4">
-                  <button type="button" onClick={() => setShowProvisionModal(false)} className="flex-1 py-4 font-black uppercase text-[10px] text-gray-400 tracking-widest">Sair</button>
-                  <button disabled={isSaving} type="submit" className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-50 active:scale-95 transition-all">
-                    {isSaving ? 'Salvando...' : 'Salvar Plano'}
+              {/* Seção Recorrência */}
+              {!editingItem && (
+                <div className="p-5 bg-gray-50 rounded-3xl border-2 border-gray-100 space-y-4">
+                  <label className="flex items-center justify-between cursor-pointer group">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${formData.isRecurring ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                        <Repeat size={16} />
+                      </div>
+                      <span className="text-[10px] font-black uppercase text-gray-600">Repetir todo mês?</span>
+                    </div>
+                    <input type="checkbox" className="w-5 h-5 accent-blue-600" checked={formData.isRecurring} onChange={e => setFormData({...formData, isRecurring: e.target.checked, recurrenceMode: e.target.checked ? 'until' : 'none'})} />
+                  </label>
+
+                  {formData.isRecurring && (
+                    <div className="space-y-4 pt-2 border-t border-gray-200 animate-in fade-in slide-in-from-top-2">
+                       <div className="flex gap-2">
+                         <button type="button" onClick={() => setFormData({...formData, recurrenceMode: 'until'})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === 'until' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Até o Mês</button>
+                         <button type="button" onClick={() => setFormData({...formData, recurrenceMode: 'count'})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === 'count' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Por X meses</button>
+                       </div>
+
+                       {formData.recurrenceMode === 'until' && (
+                         <input type="month" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" value={formData.recurrenceEndMonth || ''} onChange={e => setFormData({...formData, recurrenceEndMonth: e.target.value})} />
+                       )}
+                       {formData.recurrenceMode === 'count' && (
+                         <input type="number" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" placeholder="Número de meses" value={formData.recurrenceCount || ''} onChange={e => setFormData({...formData, recurrenceCount: parseInt(e.target.value)})} />
+                       )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-4 pt-4">
+                {editingItem ? (
+                  <button type="button" onClick={() => setShowScopeModal(true)} className="flex-1 py-4 text-red-500 font-black uppercase text-[10px] hover:bg-red-50 rounded-2xl flex items-center justify-center gap-2">
+                    <Trash2 size={16} /> Excluir
                   </button>
-                </div>
-              </form>
+                ) : (
+                  <button type="button" onClick={() => setShowProvisionModal(false)} className="flex-1 py-4 font-black uppercase text-[10px] text-gray-400">Cancelar</button>
+                )}
+                <button disabled={isSaving} type="submit" className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg">
+                  {isSaving ? 'Salvando...' : 'Salvar Plano'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Alcance (Scope) */}
+      {showScopeModal && (
+        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-xl z-[110] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] w-full max-w-sm shadow-2xl p-10 space-y-8 animate-in zoom-in">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-4">
+                <Repeat size={32} />
+              </div>
+              <h4 className="text-xl font-black uppercase tracking-tighter">Escolha o Alcance</h4>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Este plano faz parte de uma série.</p>
+            </div>
+
+            <div className="space-y-3">
+              <button 
+                onClick={() => confirmSave('current')}
+                className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-left flex items-center justify-between group transition-all"
+              >
+                <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-blue-600">Somente este mês</span>
+                <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-600" />
+              </button>
+              <button 
+                onClick={() => confirmSave('forward')}
+                className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-left flex items-center justify-between group transition-all"
+              >
+                <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-blue-600">Deste mês em diante</span>
+                <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-600" />
+              </button>
+              <button 
+                onClick={() => confirmSave('all')}
+                className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-left flex items-center justify-between group transition-all"
+              >
+                <span className="text-[10px] font-black uppercase text-gray-600 group-hover:text-blue-600">Todos os meses</span>
+                <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-600" />
+              </button>
+            </div>
+
+            <div className="pt-6 border-t border-gray-100">
+               <button 
+                onClick={() => setShowScopeModal(false)}
+                className="w-full py-2 text-[10px] font-black uppercase text-gray-400"
+               >
+                 Voltar ao formulário
+               </button>
+            </div>
+
+            {/* Opções de Exclusão no Alcance se for ação de excluir */}
+            {isSaving === false && (
+              <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-red-50">
+                 <p className="text-[9px] font-black text-red-400 uppercase text-center mb-2">Para excluir a série:</p>
+                 <button onClick={() => handleDelete('current')} className="text-[10px] font-black uppercase text-red-500 hover:bg-red-50 py-2 rounded-xl">Excluir este</button>
+                 <button onClick={() => handleDelete('forward')} className="text-[10px] font-black uppercase text-red-500 hover:bg-red-50 py-2 rounded-xl">Excluir deste em diante</button>
+                 <button onClick={() => handleDelete('all')} className="text-[10px] font-black uppercase text-red-500 hover:bg-red-50 py-2 rounded-xl">Excluir toda a série</button>
+              </div>
             )}
           </div>
         </div>

@@ -88,6 +88,15 @@ export interface Transaction {
   status: TransactionStatus;
   isFixed: boolean;
   linkedProvisionId?: string | null;
+  
+  // Novos campos de recorrência fixos
+  isRecurring: boolean;
+  recurrenceGroupId?: string;
+  recurrenceMode?: 'none' | 'until' | 'count';
+  recurrenceEndMonth?: string;
+  recurrenceCount?: number;
+  recurrenceStartMonth?: string;
+
   recurrence: {
     enabled: boolean;
     frequency: RecurrenceFrequency;
