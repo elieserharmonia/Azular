@@ -5,6 +5,7 @@ import { localDbClient } from './localDbClient';
 import { Transaction, Account, Category, Goal, Debt, UserProfile } from '../types';
 import { addMonthsToMonthKey } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
+import { DEFAULT_CATEGORIES } from '../constants';
 
 /**
  * HELPER: Calcula range de meses para busca (Tarefa A - Regra 2)
@@ -17,13 +18,11 @@ const getMonthKeyRange = (centerMonth: string, back = 24, forward = 24) => {
 
 /**
  * TAREFA A - GARANTIR CONSISTÊNCIA DA SÉRIE (SeriesSync v2)
- * Localiza itens que deveriam estar no mesmo grupo com critérios rígidos.
  */
 export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<string> => {
   const uid = currentDoc.userId;
   const currentGroupId = currentDoc.recurrenceGroupId;
 
-  // 1. Verificar se o grupo já é consistente (tem > 1 item)
   const allTxs = await getTransactions(uid);
   const existingInGroup = allTxs.filter(t => t.recurrenceGroupId === currentGroupId && currentGroupId);
 
@@ -31,39 +30,27 @@ export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<
     return currentGroupId!;
   }
 
-  // 2. Se inconsistente, buscar "irmãos" com CRITÉRIO FORTE (Tarefa A - Regra 2)
-  console.log(`[SeriesSync] Iniciando busca rigorosa de série para: ${currentDoc.description}`);
-  
   const currentVal = parseNumericValue(currentDoc.plannedAmount || currentDoc.amount);
   const { fromMonth, toMonth } = getMonthKeyRange(currentDoc.competenceMonth);
   
   const candidates = allTxs.filter(t => {
-    // Critérios de Identidade
     const isSameUser = t.userId === uid;
     const isPlanned = t.status === 'planned';
     const isSameType = t.type === currentDoc.type;
     const isSameAccount = t.accountId === currentDoc.accountId;
     const isSameCategory = t.categoryId === currentDoc.categoryId;
     const isRecurringFlag = t.isRecurring === true || !!t.recurrence;
-    
-    // Critério de Descrição Exata (Case Insensitive)
     const isSameDesc = t.description.toLowerCase().trim() === currentDoc.description.toLowerCase().trim();
-    
-    // Critério de Valor (Margem de 2% para reajustes)
     const tVal = parseNumericValue(t.plannedAmount || t.amount);
     const diff = Math.abs(tVal - currentVal);
     const isSimilarValue = currentVal === 0 ? tVal === 0 : (diff / currentVal) <= 0.02;
-
-    // Critério de Tempo (Range de 48 meses)
     const isInTimeRange = t.competenceMonth >= fromMonth && t.competenceMonth <= toMonth;
 
     return isSameUser && isPlanned && isSameType && isSameAccount && isSameCategory && 
            isRecurringFlag && isSameDesc && isSimilarValue && isInTimeRange;
   });
 
-  // 3. LIMITE DE SEGURANÇA (Tarefa A - Regra 3)
   if (candidates.length > 120) {
-    console.warn(`[SeriesSync] ABORTADO: candidatos demais (${candidates.length}).`);
     throw new Error('SERIES_TOO_LARGE');
   }
 
@@ -71,7 +58,6 @@ export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<
     return currentGroupId || `rg-${Math.random().toString(36).substring(2, 9)}`;
   }
 
-  // 4. Atualizar todos os candidatos com um único groupId
   const finalGroupId = currentGroupId || `rg-${Math.random().toString(36).substring(2, 9)}`;
   const targetIds = candidates.map(c => c.id!).filter(id => !!id);
   
@@ -94,12 +80,11 @@ export const ensureSeriesConsistency = async (currentDoc: Transaction): Promise<
     });
   }
 
-  console.log(`[SeriesSync] Série unificada com sucesso: ${targetIds.length} meses.`);
   return finalGroupId;
 };
 
 /**
- * TAREFA B - EXCLUIR RECORRÊNCIA EM LOTE (Paginado)
+ * TAREFA B - EXCLUIR RECORRÊNCIA EM LOTE
  */
 export const deleteRecurringSeries = async (params: {
   currentTx: Transaction,
@@ -108,27 +93,19 @@ export const deleteRecurringSeries = async (params: {
   toMonth?: string
 }) => {
   const { currentTx, mode, fromMonth, toMonth } = params;
-  
-  // 1. Garantir consistência (com as novas travas)
   const groupId = await ensureSeriesConsistency(currentTx);
-  
-  // 2. Busca transações após sync
   const allTxs = await getTransactions(currentTx.userId);
   const series = allTxs.filter(t => t.recurrenceGroupId === groupId && t.status === 'planned');
 
   let targetIds: string[] = [];
 
   switch (mode) {
-    case 'single':
-      targetIds = [currentTx.id!];
-      break;
+    case 'single': targetIds = [currentTx.id!]; break;
     case 'from':
       const start = fromMonth || currentTx.competenceMonth;
       targetIds = series.filter(t => t.competenceMonth >= start).map(t => t.id!);
       break;
-    case 'all':
-      targetIds = series.map(t => t.id!);
-      break;
+    case 'all': targetIds = series.map(t => t.id!); break;
     case 'range':
       if (fromMonth && toMonth) {
         targetIds = series.filter(t => t.competenceMonth >= fromMonth && t.competenceMonth <= toMonth).map(t => t.id!);
@@ -138,12 +115,9 @@ export const deleteRecurringSeries = async (params: {
 
   if (targetIds.length === 0) return { deletedCount: 0 };
 
-  // 3. Exclusão em Lotes (Chunks de 300)
   if (firebaseEnabled) {
     const db = await getDb();
     const { doc, writeBatch } = (await import('firebase/firestore')) as any;
-    
-    // Paginação de batches
     const CHUNK_SIZE = 300;
     for (let i = 0; i < targetIds.length; i += CHUNK_SIZE) {
       const chunk = targetIds.slice(i, i + CHUNK_SIZE);
@@ -151,7 +125,6 @@ export const deleteRecurringSeries = async (params: {
       chunk.forEach(id => batch.delete(doc(db, 'transactions', id)));
       await batch.commit();
     }
-    
     return { deletedCount: targetIds.length };
   } else {
     return localDbClient.bulkDeleteTransactions(targetIds);
@@ -160,28 +133,22 @@ export const deleteRecurringSeries = async (params: {
 
 /**
  * RESET TOTAL DO USUÁRIO (Wipe My Data)
+ * Agora limpa e re-semeia as categorias padrão.
  */
 export const wipeUserData = async (userId: string): Promise<{ deletedCount: number }> => {
   if (!userId) throw new Error("Usuário não identificado.");
 
   if (!firebaseEnabled) {
+    // No modo local, o resetUser já limpa. O localDbClient re-semeia no getCategories.
     await localDbClient.resetUser(userId);
     return { deletedCount: 0 };
   }
 
   try {
     const db = await getDb();
-    const { collection, query, where, getDocs, doc, writeBatch, serverTimestamp } = (await import('firebase/firestore')) as any;
+    const { collection, query, where, getDocs, doc, writeBatch, serverTimestamp, addDoc } = (await import('firebase/firestore')) as any;
     
-    const collectionsToWipe = [
-      'transactions', 
-      'accounts', 
-      'categories', 
-      'debts', 
-      'goals', 
-      'goalContributions'
-    ];
-
+    const collectionsToWipe = ['transactions', 'accounts', 'categories', 'debts', 'goals', 'goalContributions'];
     let totalDeleted = 0;
     const CHUNK_SIZE = 300;
 
@@ -189,10 +156,8 @@ export const wipeUserData = async (userId: string): Promise<{ deletedCount: numb
       const q = query(collection(db, collName), where('userId', '==', userId));
       const snap = await getDocs(q);
       const docs = snap.docs;
-
       if (docs.length === 0) continue;
 
-      // Deletar em lotes
       for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
         const chunk = docs.slice(i, i + CHUNK_SIZE);
         const batch = writeBatch(db);
@@ -202,10 +167,19 @@ export const wipeUserData = async (userId: string): Promise<{ deletedCount: numb
       }
     }
 
-    // Resetar perfil parcial (mantendo o doc mas limpando campos custom)
+    // RE-SEMEAR CATEGORIAS PADRÃO (Aquelas em ordem alfabética)
+    for (const cat of DEFAULT_CATEGORIES) {
+      await addDoc(collection(db, 'categories'), {
+        ...cat,
+        userId,
+        createdAt: serverTimestamp()
+      });
+    }
+
+    // Resetar perfil parcial
     const userRef = doc(db, 'users', userId);
-    const batch = writeBatch(db);
-    batch.update(userRef, {
+    const profileBatch = writeBatch(db);
+    profileBatch.update(userRef, {
       fullName: '',
       phone: '',
       birthDate: '',
@@ -213,7 +187,7 @@ export const wipeUserData = async (userId: string): Promise<{ deletedCount: numb
       address: {},
       updatedAt: serverTimestamp()
     });
-    await batch.commit();
+    await profileBatch.commit();
 
     return { deletedCount: totalDeleted };
   } catch (err) {
