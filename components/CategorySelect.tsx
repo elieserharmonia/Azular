@@ -20,6 +20,8 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ userId, value, onChange
   const [newCatName, setNewCatName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const { notifySuccess, notifyError } = useToast();
+  const filtered = data.filter(c => c.direction === direction || c.direction === 'both');
+
 
   const load = async () => {
     setLoading(true);
