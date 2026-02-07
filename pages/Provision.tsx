@@ -16,7 +16,7 @@ import { formatCurrency, getCurrentMonth, getMonthName } from '../utils/formatte
 import { parseNumericValue } from '../utils/number';
 import { useToast } from '../context/ToastContext';
 import { 
-  ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, AlertTriangle
+  ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X
 } from 'lucide-react';
 import CategorySelect from '../components/CategorySelect';
 
@@ -49,6 +49,7 @@ const Provision: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, selectedYear]); 
 
   const loadData = async () => {
@@ -75,13 +76,16 @@ const Provision: React.FC = () => {
 
   const tableData = useMemo(() => {
     const plannedTxs = transactions.filter(t => (t.status === 'planned' || t.isFixed));
+
     const buildGroupedData = (list: Transaction[], type: 'credit' | 'debit') => {
       const filtered = list.filter(t => t.type === type);
       const catIds = Array.from(new Set(filtered.map(t => t.categoryId)));
+
       return catIds.map(catId => {
         const catName = categories.find(c => c.id === catId)?.name || 'Outros';
         const catItems = filtered.filter(t => t.categoryId === catId);
         const descriptions = Array.from(new Set(catItems.map(t => t.description)));
+
         const rows = descriptions.map(desc => {
           const values: Record<string, number> = {};
           const originals: Record<string, Transaction | null> = {};
@@ -92,13 +96,17 @@ const Provision: React.FC = () => {
           });
           return { name: desc, values, originals };
         });
+
         const catTotals: Record<string, number> = {};
         tableMonths.forEach(m => { catTotals[m] = rows.reduce((sum, r) => sum + r.values[m], 0); });
+
         return { catId, catName, rows, catTotals };
       }).filter(g => g.rows.some(r => Object.values(r.values).some(v => v > 0)));
     };
+
     const entryGroups = buildGroupedData(plannedTxs, 'credit');
     const exitGroups = buildGroupedData(plannedTxs, 'debit');
+
     const accumulated: Record<string, number> = {};
     let running = 0;
     tableMonths.forEach(m => {
@@ -107,6 +115,7 @@ const Provision: React.FC = () => {
       running += (inM - outM);
       accumulated[m] = running;
     });
+
     return { entryGroups, exitGroups, accumulated };
   }, [transactions, tableMonths, categories]);
 
@@ -117,19 +126,35 @@ const Provision: React.FC = () => {
     setShowProvisionModal(true);
   };
 
+  // ✅ Bloqueia submit acidental ao pressionar Enter dentro do modal
+  const blockEnterSubmit = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+
+    // Se o elemento for input ou select (exceto textarea), bloqueamos o Enter
+    // para evitar que o modal salve/feche indevidamente
+    if (target.tagName === "INPUT" || target.tagName === "SELECT") {
+      e.preventDefault();
+    }
+  };
+
   const confirmAction = async (scope: 'current' | 'forward' | 'all' | 'range') => {
     if (!uid) return;
     setIsSaving(true);
+
     try {
       if (scopeAction === 'update') {
         const amountVal = parseNumericValue(formData.plannedAmount);
         const payload = { ...formData, plannedAmount: amountVal, userId: uid, updatedAt: new Date().toISOString() };
+
         if (editingItem?.id) {
           await updateProvisionSeries(editingItem, payload, scope === 'range' ? 'all' : (scope as any));
         }
+
         notifySuccess("Série atualizada!");
       } else {
-        // EXCLUSÃO RECORRENTE COM TRAVAS (Tarefa B)
         const result = await deleteRecurringSeries({
           currentTx: editingItem!,
           mode: scope as any,
@@ -138,16 +163,17 @@ const Provision: React.FC = () => {
         });
 
         if (result.deletedCount > 120) {
-           notifyInfo(`Operação concluída em lote: ${result.deletedCount} itens removidos.`);
+          notifyInfo(`Operação concluída em lote: ${result.deletedCount} itens removidos.`);
         } else {
-           notifySuccess(`Removido(s) ${result.deletedCount} lançamento(s).`);
+          notifySuccess(`Removido(s) ${result.deletedCount} lançamento(s).`);
         }
       }
+
       setShowProvisionModal(false);
       setShowScopeModal(false);
-      loadData();
+      await loadData();
     } catch (err: any) {
-      if (err.message === 'SERIES_TOO_LARGE') {
+      if (err?.message === 'SERIES_TOO_LARGE') {
         notifyError("Série ambígua demais (muitos itens similares). Opere individualmente.");
       } else {
         notifyError("Erro ao processar solicitação.");
@@ -160,18 +186,32 @@ const Provision: React.FC = () => {
   const handleSaveProvision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uid) return;
+
     const amountVal = parseNumericValue(formData.plannedAmount);
     if (isNaN(amountVal) || amountVal <= 0) return notifyInfo("Informe um valor válido.");
 
     if (editingItem) {
-       setScopeAction('update');
-       setShowScopeModal(true);
-    } else {
-       if (formData.isRecurring) await addProvisionSeries({ ...formData, plannedAmount: amountVal, userId: uid });
-       else await addTransaction({ ...formData, plannedAmount: amountVal, userId: uid, status: 'planned' });
-       notifySuccess("Plano salvo!");
-       setShowProvisionModal(false);
-       loadData();
+      setScopeAction('update');
+      setShowScopeModal(true);
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      if (formData.isRecurring) {
+        await addProvisionSeries({ ...formData, plannedAmount: amountVal, userId: uid });
+      } else {
+        await addTransaction({ ...formData, plannedAmount: amountVal, userId: uid, status: 'planned' });
+      }
+
+      notifySuccess("Plano salvo!");
+      setShowProvisionModal(false);
+      await loadData();
+    } catch (err) {
+      notifyError("Erro ao salvar o plano.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -183,170 +223,379 @@ const Provision: React.FC = () => {
   return (
     <div className="space-y-6 pb-32">
       <header className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div><h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">Previsão</h2></div>
+        <div>
+          <h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">
+            Previsão
+          </h2>
+        </div>
+
         <div className="flex items-center gap-3 bg-white p-2 rounded-[1.5rem] shadow-sm border border-blue-50">
-          <button onClick={() => setSelectedYear(y => y - 1)} className="p-2 hover:bg-blue-50 rounded-xl"><ChevronLeft size={20} /></button>
+          <button type="button" onClick={() => setSelectedYear(y => y - 1)} className="p-2 hover:bg-blue-50 rounded-xl">
+            <ChevronLeft size={20} />
+          </button>
+
           <span className="text-sm font-black text-gray-900">{selectedYear}</span>
-          <button onClick={() => setSelectedYear(y => y + 1)} className="p-2 hover:bg-blue-50 rounded-xl"><ChevronRight size={20} /></button>
+
+          <button type="button" onClick={() => setSelectedYear(y => y + 1)} className="p-2 hover:bg-blue-50 rounded-xl">
+            <ChevronRight size={20} />
+          </button>
+
           <button 
             disabled={loading}
-            onClick={() => { setFormData({ type: 'debit', competenceMonth: getCurrentMonth() }); setEditingItem(null); setShowProvisionModal(true); }} 
+            type="button"
+            onClick={() => {
+              setFormData({ type: 'debit', competenceMonth: getCurrentMonth(), isRecurring: false, recurrenceMode: 'none' } as any);
+              setEditingItem(null);
+              setShowRangeInputs(false);
+              setShowProvisionModal(true);
+            }} 
             className="ml-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2"
-          ><Plus size={14} /> Novo Plano</button>
+          >
+            <Plus size={14} /> Novo Plano
+          </button>
         </div>
       </header>
 
       <div className="bg-white rounded-[2rem] border-2 border-blue-50 shadow-xl overflow-hidden relative">
         <div className="overflow-x-auto no-scrollbar scroll-smooth">
           {loading ? (
-             <div className="p-20 text-center flex flex-col items-center gap-4">
-                <Loader2 className="animate-spin text-blue-600" />
-                <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Calculando projeções...</span>
-             </div>
+            <div className="p-20 text-center flex flex-col items-center gap-4">
+              <Loader2 className="animate-spin text-blue-600" />
+              <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                Calculando projeções...
+              </span>
+            </div>
           ) : (
             <table className="w-full text-left border-collapse min-w-[800px] md:min-w-[1200px]">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="sticky left-0 z-30 bg-gray-100 px-2 md:px-4 py-4 text-[8px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[90px] md:w-[280px]">DESCRITIVO</th>
+                  <th className="sticky left-0 z-30 bg-gray-100 px-2 md:px-4 py-4 text-[8px] md:text-[10px] font-black uppercase text-gray-500 tracking-widest border-r border-blue-50 w-[90px] md:w-[280px]">
+                    DESCRITIVO
+                  </th>
                   {tableMonths.map(m => (
-                    <th key={m} className={`px-2 py-4 text-[9px] md:text-[10px] font-black uppercase text-center border-b border-blue-50 ${m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'}`}>
+                    <th
+                      key={m}
+                      className={`px-2 py-4 text-[9px] md:text-[10px] font-black uppercase text-center border-b border-blue-50 ${
+                        m === getCurrentMonth() ? 'bg-blue-600 text-white' : 'text-gray-600'
+                      }`}
+                    >
                       <span className="md:hidden">{getShortMonth(m)}</span>
-                      <span className="hidden md:inline">{getMonthName(m).split(' de ')[0].toUpperCase()}</span>
+                      <span className="hidden md:inline">
+                        {getMonthName(m).split(' de ')[0].toUpperCase()}
+                      </span>
                     </th>
                   ))}
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-gray-50">
-                 {/* Ganhos */}
-                 <tr className="bg-emerald-600 text-white font-black">
-                   <td className="sticky left-0 bg-emerald-600 px-2 md:px-4 py-2 text-[8px] md:text-[10px] uppercase border-r border-emerald-500 z-20">Ganhos Planejados</td>
-                   {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
-                 </tr>
-                 {tableData.entryGroups.map(g => (
-                    <React.Fragment key={g.catId}>
-                      <tr className="bg-emerald-50/30">
-                        <td className="sticky left-0 bg-[#F4FCF9] px-2 md:px-4 py-2 border-r border-emerald-100 text-[7px] md:text-[9px] font-black text-emerald-700 uppercase z-20 truncate">{g.catName}</td>
-                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[8px] md:text-[10px] font-black text-emerald-800">{formatCurrency(g.catTotals[m])}</td>)}
-                      </tr>
-                      {g.rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 transition-colors group">
-                          <td className="sticky left-0 bg-white px-4 md:px-8 py-2 border-r border-gray-100 text-[7px] md:text-[8px] font-bold text-gray-500 uppercase z-20 truncate">{row.name}</td>
-                          {tableMonths.map(m => (
-                            <td key={m} onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)} className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}>
-                              <div className="flex flex-col items-center gap-0.5">
-                                {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
-                                {(row.originals[m]?.isRecurring || row.originals[m]?.recurrenceGroupId) && <Repeat size={8} className="text-blue-400" />}
-                              </div>
-                            </td>
-                          ))}
-                        </tr>
+                {/* Ganhos */}
+                <tr className="bg-emerald-600 text-white font-black">
+                  <td className="sticky left-0 bg-emerald-600 px-2 md:px-4 py-2 text-[8px] md:text-[10px] uppercase border-r border-emerald-500 z-20">
+                    Ganhos Planejados
+                  </td>
+                  {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
+                </tr>
+
+                {tableData.entryGroups.map(g => (
+                  <React.Fragment key={g.catId}>
+                    <tr className="bg-emerald-50/30">
+                      <td className="sticky left-0 bg-[#F4FCF9] px-2 md:px-4 py-2 border-r border-emerald-100 text-[7px] md:text-[9px] font-black text-emerald-700 uppercase z-20 truncate">
+                        {g.catName}
+                      </td>
+                      {tableMonths.map(m => (
+                        <td key={m} className="px-2 py-2 text-center text-[8px] md:text-[10px] font-black text-emerald-800">
+                          {formatCurrency(g.catTotals[m])}
+                        </td>
                       ))}
-                    </React.Fragment>
-                 ))}
-                 
-                 {/* Gastos */}
-                 <tr className="bg-blue-600 text-white font-black">
-                   <td className="sticky left-0 bg-blue-600 px-2 md:px-4 py-2 text-[8px] md:text-[10px] uppercase border-r border-blue-500 z-20">Gastos Planejados</td>
-                   {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
-                 </tr>
-                 {tableData.exitGroups.map(g => (
-                    <React.Fragment key={g.catId}>
-                      <tr className="bg-blue-50/30">
-                        <td className="sticky left-0 bg-[#F5F8FF] px-2 md:px-4 py-2 border-r border-blue-100 text-[7px] md:text-[9px] font-black text-blue-700 uppercase z-20 truncate">{g.catName}</td>
-                        {tableMonths.map(m => <td key={m} className="px-2 py-2 text-center text-[8px] md:text-[10px] font-black text-blue-800">{formatCurrency(g.catTotals[m])}</td>)}
+                    </tr>
+
+                    {g.rows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50 transition-colors group">
+                        <td className="sticky left-0 bg-white px-4 md:px-8 py-2 border-r border-gray-100 text-[7px] md:text-[8px] font-bold text-gray-500 uppercase z-20 truncate">
+                          {row.name}
+                        </td>
+                        {tableMonths.map(m => (
+                          <td
+                            key={m}
+                            onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)}
+                            className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer ${
+                              row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'
+                            }`}
+                          >
+                            <div className="flex flex-col items-center gap-0.5">
+                              {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
+                              {(row.originals[m]?.isRecurring || row.originals[m]?.recurrenceGroupId) && (
+                                <Repeat size={8} className="text-blue-400" />
+                              )}
+                            </div>
+                          </td>
+                        ))}
                       </tr>
-                      {g.rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 transition-colors group">
-                          <td className="sticky left-0 bg-white px-4 md:px-8 py-2 border-r border-gray-100 text-[7px] md:text-[8px] font-bold text-gray-500 uppercase z-20 truncate">{row.name}</td>
-                          {tableMonths.map(m => (
-                            <td key={m} onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)} className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer ${row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'}`}>
-                              <div className="flex flex-col items-center gap-0.5">
-                                {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
-                                {(row.originals[m]?.isRecurring || row.originals[m]?.recurrenceGroupId) && <Repeat size={8} className="text-blue-400" />}
-                              </div>
-                            </td>
-                          ))}
-                        </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+
+                {/* Gastos */}
+                <tr className="bg-blue-600 text-white font-black">
+                  <td className="sticky left-0 bg-blue-600 px-2 md:px-4 py-2 text-[8px] md:text-[10px] uppercase border-r border-blue-500 z-20">
+                    Gastos Planejados
+                  </td>
+                  {tableMonths.map(m => <td key={m} className="px-4 py-2" />)}
+                </tr>
+
+                {tableData.exitGroups.map(g => (
+                  <React.Fragment key={g.catId}>
+                    <tr className="bg-blue-50/30">
+                      <td className="sticky left-0 bg-[#F5F8FF] px-2 md:px-4 py-2 border-r border-blue-100 text-[7px] md:text-[9px] font-black text-blue-700 uppercase z-20 truncate">
+                        {g.catName}
+                      </td>
+                      {tableMonths.map(m => (
+                        <td key={m} className="px-2 py-2 text-center text-[8px] md:text-[10px] font-black text-blue-800">
+                          {formatCurrency(g.catTotals[m])}
+                        </td>
                       ))}
-                    </React.Fragment>
-                 ))}
-                 
-                 {/* Acumulado */}
-                 <tr className="bg-slate-900 text-white font-black">
-                   <td className="sticky left-0 bg-slate-900 px-2 md:px-4 py-4 text-[8px] md:text-[11px] uppercase border-r border-slate-700 z-20">Acumulado Previsto</td>
-                   {tableMonths.map(m => (
-                     <td key={m} className={`px-2 py-4 text-center text-[8px] md:text-sm font-black ${tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                       {formatCurrency(tableData.accumulated[m])}
-                     </td>
-                   ))}
-                 </tr>
+                    </tr>
+
+                    {g.rows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50 transition-colors group">
+                        <td className="sticky left-0 bg-white px-4 md:px-8 py-2 border-r border-gray-100 text-[7px] md:text-[8px] font-bold text-gray-500 uppercase z-20 truncate">
+                          {row.name}
+                        </td>
+                        {tableMonths.map(m => (
+                          <td
+                            key={m}
+                            onClick={() => row.originals[m] && handleOpenEdit(row.originals[m]!)}
+                            className={`px-2 py-2 text-center text-[7px] md:text-[9px] font-medium cursor-pointer ${
+                              row.values[m] > 0 ? 'text-gray-600 hover:scale-110' : 'text-gray-200'
+                            }`}
+                          >
+                            <div className="flex flex-col items-center gap-0.5">
+                              {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
+                              {(row.originals[m]?.isRecurring || row.originals[m]?.recurrenceGroupId) && (
+                                <Repeat size={8} className="text-blue-400" />
+                              )}
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+
+                {/* Acumulado */}
+                <tr className="bg-slate-900 text-white font-black">
+                  <td className="sticky left-0 bg-slate-900 px-2 md:px-4 py-4 text-[8px] md:text-[11px] uppercase border-r border-slate-700 z-20">
+                    Acumulado Previsto
+                  </td>
+                  {tableMonths.map(m => (
+                    <td
+                      key={m}
+                      className={`px-2 py-4 text-center text-[8px] md:text-sm font-black ${
+                        tableData.accumulated[m] < 0 ? 'text-red-400' : 'text-emerald-400'
+                      }`}
+                    >
+                      {formatCurrency(tableData.accumulated[m])}
+                    </td>
+                  ))}
+                </tr>
               </tbody>
             </table>
           )}
         </div>
       </div>
 
+      {/* ✅ MODAL: Novo/Editar Plano */}
       {showProvisionModal && (
-        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-8 relative border-2 border-blue-50 overflow-y-auto max-h-[90vh]">
+        <div
+          className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4"
+          onMouseDown={(e) => {
+            // Fecha somente se clicar exatamente no fundo
+            if (e.target === e.currentTarget) setShowProvisionModal(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-8 relative border-2 border-blue-50 overflow-y-auto max-h-[90vh]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black uppercase tracking-tighter">{editingItem ? 'Editar Plano' : 'Novo Plano'}</h3>
-              <button onClick={() => setShowProvisionModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={24} /></button>
+              <h3 className="text-xl font-black uppercase tracking-tighter">
+                {editingItem ? 'Editar Plano' : 'Novo Plano'}
+              </h3>
+
+              <button
+                type="button"
+                onClick={() => setShowProvisionModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X size={24} />
+              </button>
             </div>
-            <form onSubmit={handleSaveProvision} className="space-y-6">
+
+            <form onSubmit={handleSaveProvision} onKeyDown={blockEnterSubmit} className="space-y-6">
               <div className="flex p-1.5 bg-blue-50 rounded-2xl">
-                <button type="button" onClick={() => setFormData({...formData, type: 'credit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl ${formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>Entrada</button>
-                <button type="button" onClick={() => setFormData({...formData, type: 'debit'})} className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl ${formData.type === 'debit' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}>Saída</button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: 'credit' })}
+                  className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl ${
+                    formData.type === 'credit' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'
+                  }`}
+                >
+                  Entrada
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: 'debit' })}
+                  className={`flex-1 py-3 font-black uppercase text-[10px] rounded-xl ${
+                    formData.type === 'debit' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
+                  }`}
+                >
+                  Saída
+                </button>
               </div>
+
               <div>
                 <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Descrição</label>
-                <input required type="text" className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
+                <input
+                  required
+                  type="text"
+                  className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent"
+                  value={formData.description || ''}
+                  onChange={e => setFormData({ ...formData, description: e.target.value })}
+                />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Valor</label>
-                  <input required type="text" className="w-full text-2xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent" placeholder="0,00" value={formData.plannedAmount || ''} onChange={e => setFormData({...formData, plannedAmount: e.target.value as any})} />
+                  <input
+                    required
+                    type="text"
+                    className="w-full text-2xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent"
+                    placeholder="0,00"
+                    value={formData.plannedAmount || ''}
+                    onChange={e => setFormData({ ...formData, plannedAmount: e.target.value as any })}
+                  />
                 </div>
+
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Mês Alvo</label>
-                  <input required type="month" className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none bg-transparent" value={formData.competenceMonth || ''} onChange={e => setFormData({...formData, competenceMonth: e.target.value})} />
+                  <input
+                    required
+                    type="month"
+                    className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none bg-transparent"
+                    value={formData.competenceMonth || ''}
+                    onChange={e => setFormData({ ...formData, competenceMonth: e.target.value })}
+                  />
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <select required className="w-full font-black border-b-2 border-blue-50 bg-transparent outline-none pb-2" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
+                <select
+                  required
+                  className="w-full font-black border-b-2 border-blue-50 bg-transparent outline-none pb-2"
+                  value={formData.accountId || ''}
+                  onChange={e => setFormData({ ...formData, accountId: e.target.value })}
+                >
                   <option value="">Conta...</option>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
                 </select>
-                <CategorySelect userId={uid!} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
+
+                <CategorySelect
+                  userId={uid!}
+                  value={formData.categoryId || ''}
+                  direction={formData.type || 'debit'}
+                  onChange={(id) => setFormData({ ...formData, categoryId: id })}
+                />
               </div>
+
               {!editingItem && (
                 <div className="p-5 bg-gray-50 rounded-3xl border-2 border-gray-100 space-y-4">
                   <label className="flex items-center justify-between cursor-pointer">
                     <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${formData.isRecurring ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'}`}><Repeat size={16} /></div>
+                      <div className={`p-2 rounded-lg ${formData.isRecurring ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                        <Repeat size={16} />
+                      </div>
                       <span className="text-[10px] font-black uppercase text-gray-600">Repetir todo mês?</span>
                     </div>
-                    <input type="checkbox" className="w-5 h-5 accent-blue-600" checked={formData.isRecurring} onChange={e => setFormData({...formData, isRecurring: e.target.checked, recurrenceMode: e.target.checked ? 'until' : 'none'})} />
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-blue-600"
+                      checked={!!formData.isRecurring}
+                      onChange={e => setFormData({ ...formData, isRecurring: e.target.checked, recurrenceMode: e.target.checked ? 'until' : 'none' })}
+                    />
                   </label>
+
                   {formData.isRecurring && (
                     <div className="space-y-4 pt-2 border-t border-gray-200">
-                       <div className="flex gap-2">
-                         <button type="button" onClick={() => setFormData({...formData, recurrenceMode: 'until'})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === 'until' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Até o Mês</button>
-                         <button type="button" onClick={() => setFormData({...formData, recurrenceMode: 'count'})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === 'count' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Por X meses</button>
-                       </div>
-                       {formData.recurrenceMode === 'until' && <input type="month" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" value={formData.recurrenceEndMonth || ''} onChange={e => setFormData({...formData, recurrenceEndMonth: e.target.value})} />}
-                       {formData.recurrenceMode === 'count' && <input type="number" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" placeholder="Meses" value={formData.recurrenceCount || ''} onChange={e => setFormData({...formData, recurrenceCount: parseInt(e.target.value)})} />}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, recurrenceMode: 'until' })}
+                          className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${
+                            formData.recurrenceMode === 'until'
+                              ? 'border-blue-600 bg-blue-50 text-blue-600'
+                              : 'border-gray-100 text-gray-400'
+                          }`}
+                        >
+                          Até o Mês
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, recurrenceMode: 'count' })}
+                          className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${
+                            formData.recurrenceMode === 'count'
+                              ? 'border-blue-600 bg-blue-50 text-blue-600'
+                              : 'border-gray-100 text-gray-400'
+                          }`}
+                        >
+                          Por X meses
+                        </button>
+                      </div>
+
+                      {formData.recurrenceMode === 'until' && (
+                        <input
+                          type="month"
+                          className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs"
+                          value={(formData as any).recurrenceEndMonth || ''}
+                          onChange={e => setFormData({ ...formData, recurrenceEndMonth: e.target.value } as any)}
+                        />
+                      )}
+
+                      {formData.recurrenceMode === 'count' && (
+                        <input
+                          type="number"
+                          className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs"
+                          placeholder="Meses"
+                          value={(formData as any).recurrenceCount || ''}
+                          onChange={e => setFormData({ ...formData, recurrenceCount: parseInt(e.target.value || '0', 10) } as any)}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
               )}
+
               <div className="flex gap-4 pt-4">
                 {editingItem && (
-                  <button type="button" onClick={() => { setScopeAction('delete'); setShowScopeModal(true); }} className="flex-1 py-4 text-red-500 font-black uppercase text-[10px] hover:bg-red-50 rounded-2xl flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setScopeAction('delete'); setShowScopeModal(true); }}
+                    className="flex-1 py-4 text-red-500 font-black uppercase text-[10px] hover:bg-red-50 rounded-2xl flex items-center justify-center gap-2"
+                  >
                     <Trash2 size={16} /> Excluir
                   </button>
                 )}
-                <button disabled={isSaving} type="submit" className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg">
+
+                <button
+                  disabled={isSaving}
+                  type="submit"
+                  className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-60"
+                >
                   {isSaving ? 'Salvando...' : 'Salvar Plano'}
                 </button>
               </div>
@@ -355,43 +604,106 @@ const Provision: React.FC = () => {
         </div>
       )}
 
+      {/* ✅ MODAL: Escopo da operação (Atualizar/Excluir série) */}
       {showScopeModal && (
-        <div className="fixed inset-0 bg-blue-900/60 backdrop-blur-xl z-[110] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] w-full max-w-sm shadow-2xl p-10 space-y-6">
+        <div
+          className="fixed inset-0 bg-blue-900/60 backdrop-blur-xl z-[110] flex items-center justify-center p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowScopeModal(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-[3rem] w-full max-w-sm shadow-2xl p-10 space-y-6"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="text-center">
-              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-4"><Repeat size={32} /></div>
-              <h4 className="text-xl font-black uppercase tracking-tighter">{scopeAction === 'update' ? 'Atualizar Série' : 'Excluir Série'}</h4>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Escolha o alcance da operação.</p>
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-4">
+                <Repeat size={32} />
+              </div>
+              <h4 className="text-xl font-black uppercase tracking-tighter">
+                {scopeAction === 'update' ? 'Atualizar Série' : 'Excluir Série'}
+              </h4>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">
+                Escolha o alcance da operação.
+              </p>
             </div>
+
             <div className="space-y-3">
-              <button onClick={() => confirmAction('current')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
+              <button
+                type="button"
+                onClick={() => confirmAction('current')}
+                className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all"
+              >
                 Somente este mês
               </button>
-              <button onClick={() => confirmAction('forward')} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
+
+              <button
+                type="button"
+                onClick={() => confirmAction('forward')}
+                className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all"
+              >
                 Deste mês em diante
               </button>
-              <button onClick={() => {
-                const totalSeries = transactions.filter(t => t.recurrenceGroupId === editingItem?.recurrenceGroupId).length;
-                if (totalSeries > 120 && !window.confirm(`Atenção: Você está prestes a excluir ${totalSeries} meses de uma vez. Deseja prosseguir?`)) return;
-                confirmAction('all');
-              }} className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all">
+
+              <button
+                type="button"
+                onClick={() => {
+                  const totalSeries = transactions.filter(t => t.recurrenceGroupId === editingItem?.recurrenceGroupId).length;
+                  if (totalSeries > 120 && !window.confirm(`Atenção: Você está prestes a excluir ${totalSeries} meses de uma vez. Deseja prosseguir?`)) return;
+                  confirmAction('all');
+                }}
+                className="w-full py-4 px-6 bg-gray-50 hover:bg-blue-50 border-2 border-gray-100 hover:border-blue-600 rounded-2xl text-[10px] font-black uppercase text-gray-600 flex items-center justify-between transition-all"
+              >
                 Toda a série
               </button>
-              <button onClick={() => setShowRangeInputs(!showRangeInputs)} className="w-full py-4 px-6 bg-gray-50 border-2 border-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-400 flex items-center justify-between">
+
+              <button
+                type="button"
+                onClick={() => setShowRangeInputs(!showRangeInputs)}
+                className="w-full py-4 px-6 bg-gray-50 border-2 border-gray-100 rounded-2xl text-[10px] font-black uppercase text-gray-400 flex items-center justify-between"
+              >
                 Escolher Intervalo...
               </button>
+
               {showRangeInputs && (
                 <div className="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-4 animate-in slide-in-from-top-2">
-                   <div className="grid grid-cols-2 gap-2">
-                     <input type="month" value={rangeStart} onChange={e => setRangeStart(e.target.value)} className="w-full p-2 text-[10px] font-black uppercase border rounded-lg" placeholder="Início" />
-                     <input type="month" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className="w-full p-2 text-[10px] font-black uppercase border rounded-lg" placeholder="Fim" />
-                   </div>
-                   <button disabled={!rangeStart || !rangeEnd} onClick={() => confirmAction('range')} className="w-full py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-30">Confirmar Intervalo</button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="month"
+                      value={rangeStart}
+                      onChange={e => setRangeStart(e.target.value)}
+                      className="w-full p-2 text-[10px] font-black uppercase border rounded-lg"
+                      placeholder="Início"
+                    />
+                    <input
+                      type="month"
+                      value={rangeEnd}
+                      onChange={e => setRangeEnd(e.target.value)}
+                      className="w-full p-2 text-[10px] font-black uppercase border rounded-lg"
+                      placeholder="Fim"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!rangeStart || !rangeEnd}
+                    onClick={() => confirmAction('range')}
+                    className="w-full py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase disabled:opacity-30"
+                  >
+                    Confirmar Intervalo
+                  </button>
                 </div>
               )}
             </div>
+
             <div className="pt-4 text-center">
-              <button onClick={() => setShowScopeModal(false)} className="text-[10px] font-black uppercase text-gray-300">Voltar</button>
+              <button
+                type="button"
+                onClick={() => setShowScopeModal(false)}
+                className="text-[10px] font-black uppercase text-gray-300"
+              >
+                Voltar
+              </button>
             </div>
           </div>
         </div>
