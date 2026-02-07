@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { getCategories, createCategory } from '../services/db';
 import { Category } from '../types';
-import { Plus, Tag, X, Loader2 } from 'lucide-react';
+import { Plus, X, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 interface CategorySelectProps {
@@ -18,34 +18,45 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ userId, value, onChange
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  const [newCatDirection, setNewCatDirection] = useState<'credit' | 'debit' | 'both'>(direction);
   const [isSaving, setIsSaving] = useState(false);
   const { notifySuccess, notifyError } = useToast();
-  const filtered = data.filter(c => c.direction === direction || c.direction === 'both');
-
 
   const load = async () => {
+    if (!userId) return;
     setLoading(true);
-    const data = await getCategories(userId);
-    // Filtra por direção
-    const filtered = data.filter(c => c.direction === direction || c.direction === 'both');
-    setCategories(filtered);
-    setLoading(false);
+    try {
+      const data = await getCategories(userId);
+      // Filtra categorias compatíveis com a direção do lançamento
+      const filtered = data.filter(c => 
+        direction === 'both' || c.direction === 'both' || c.direction === direction
+      );
+      setCategories(filtered);
+    } catch (err) {
+      console.error("Erro ao carregar categorias:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    if (userId) load();
+    load();
+    // Sempre que o contexto do lançamento mudar, reseta a direção da nova categoria
+    setNewCatDirection(direction === 'both' ? 'debit' : direction);
   }, [userId, direction]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // Impede que o submit borbulhe para modais pai
+    
     if (!newCatName.trim() || isSaving) return;
 
     setIsSaving(true);
     try {
-      const newId = await createCategory(userId, newCatName.trim(), direction);
+      const newId = await createCategory(userId, newCatName.trim(), newCatDirection);
       notifySuccess("Categoria criada!");
-      await load(); // Recarrega a lista
-      onChange(newId); // Seleciona automaticamente
+      await load(); 
+      onChange(newId); 
       setShowModal(false);
       setNewCatName('');
     } catch (err) {
@@ -91,7 +102,10 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ userId, value, onChange
         
         <button 
           type="button"
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setNewCatDirection(direction === 'both' ? 'debit' : direction);
+            setShowModal(true);
+          }}
           className="text-[10px] font-black uppercase text-blue-600 hover:text-blue-800 flex items-center gap-1 tracking-tight"
         >
           <Plus size={14} /> Nova categoria
@@ -100,8 +114,14 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ userId, value, onChange
 
       {/* Modal Interno de Criação */}
       {showModal && (
-        <div className="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-xs shadow-2xl p-8 animate-in zoom-in duration-300">
+        <div 
+          className="fixed inset-0 bg-blue-900/30 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
+          onMouseDown={(e) => { if(e.target === e.currentTarget) setShowModal(false); }}
+        >
+          <div 
+            className="bg-white rounded-[2.5rem] w-full max-w-xs shadow-2xl p-8 animate-in zoom-in duration-300 border-2 border-blue-50"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-6">
               <h4 className="text-sm font-black uppercase tracking-tight text-gray-900">Nova Categoria</h4>
               <button type="button" onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -118,9 +138,23 @@ const CategorySelect: React.FC<CategorySelectProps> = ({ userId, value, onChange
                   type="text" 
                   value={newCatName}
                   onChange={e => setNewCatName(e.target.value)}
-                  className="w-full font-black border-b-2 border-gray-100 pb-2 outline-none focus:border-blue-600 text-sm"
+                  className="w-full font-black border-b-2 border-gray-100 pb-2 outline-none focus:border-blue-600 text-sm bg-transparent"
                   placeholder="Ex: Assinaturas"
                 />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 block mb-2">Tipo / Fluxo</label>
+                <select
+                  required
+                  value={newCatDirection}
+                  onChange={e => setNewCatDirection(e.target.value as any)}
+                  className="w-full font-black border-b-2 border-gray-100 pb-2 outline-none focus:border-blue-600 text-sm bg-transparent"
+                >
+                  <option value="debit">Saída (Gasto)</option>
+                  <option value="credit">Entrada (Ganho)</option>
+                  <option value="both">Ambos (Flexível)</option>
+                </select>
               </div>
 
               <button 
