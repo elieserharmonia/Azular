@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
@@ -13,10 +14,8 @@ import {
   Phone,
   Mail,
   User as UserIcon,
-  // Added Loader2 to fix compilation error
   Loader2
 } from 'lucide-react';
-import { formatCurrency } from '../utils/formatters';
 
 const AdminUsers: React.FC = () => {
   const { user } = useAuth();

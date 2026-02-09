@@ -1,12 +1,13 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { useLocation } from 'react-router-dom';
 import { dbClient } from '../services/dbClient';
-import { Transaction, Account, Category } from '../types';
+import { Transaction, Account, Category, TransactionStatus } from '../types';
 import { formatCurrency, formatDate, getCurrentMonth, getTodayDate } from '../utils/formatters';
 import { parseNumericValue } from '../utils/number';
 import { useToast } from '../context/ToastContext';
-import { Plus, Search, CheckCircle, X, RefreshCw, Loader2, Sparkles } from 'lucide-react';
+import { Plus, Search, CheckCircle, X, Loader2, Sparkles } from 'lucide-react';
 import CategorySelect from '../components/CategorySelect';
 
 const INITIAL_FORM_STATE = (): Partial<Transaction> => {
@@ -17,7 +18,7 @@ const INITIAL_FORM_STATE = (): Partial<Transaction> => {
     description: '',
     plannedAmount: 0,
     amount: 0,
-    status: 'done',
+    status: 'done' as TransactionStatus,
     competenceMonth: getCurrentMonth(),
     dueDate: today,
     receiveDate: today,
@@ -46,7 +47,6 @@ const Transactions: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<Transaction>>(INITIAL_FORM_STATE());
   const [isProcessing, setIsProcessing] = useState(false);
-  const [categoryError, setCategoryError] = useState('');
   const [foundProvision, setFoundProvision] = useState<Transaction | null>(null);
 
   useEffect(() => {
@@ -78,7 +78,6 @@ const Transactions: React.FC = () => {
     setEditingTx(tx);
     setFormData(tx);
     setShowModal(true);
-    setCategoryError('');
   };
 
   useEffect(() => {
@@ -90,7 +89,7 @@ const Transactions: React.FC = () => {
     const match = transactions.find(t => 
       t.status === 'planned' && 
       t.type === formData.type &&
-      t.description.toLowerCase().trim() === formData.description!.toLowerCase().trim() &&
+      t.description?.toLowerCase().trim() === formData.description?.toLowerCase().trim() &&
       t.competenceMonth === formData.competenceMonth
     );
 
@@ -98,7 +97,7 @@ const Transactions: React.FC = () => {
     if (match) {
       setFormData(prev => ({
         ...prev,
-        categoryId: match.categoryId,
+        categoriaId: match.categoriaId,
         accountId: match.accountId,
         amount: prev.amount === 0 ? parseNumericValue(match.plannedAmount || match.amount) : prev.amount
       }));
@@ -107,7 +106,7 @@ const Transactions: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !formData.accountId || !formData.categoryId) {
+    if (!user || !formData.accountId || !formData.categoriaId) {
       notifyInfo("Complete os campos obrigatórios.");
       return;
     }
@@ -140,13 +139,12 @@ const Transactions: React.FC = () => {
     setShowModal(false);
     setEditingTx(null);
     setFormData(INITIAL_FORM_STATE());
-    setCategoryError('');
   };
 
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter(t => t.status === 'done')
-      .filter(t => t.description.toLowerCase().includes(searchTerm.toLowerCase()))
+      .filter(t => (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()))
       .sort((a, b) => (b.receiveDate || b.dueDate || '').localeCompare(a.receiveDate || a.dueDate || ''));
   }, [transactions, searchTerm]);
 
@@ -186,15 +184,15 @@ const Transactions: React.FC = () => {
                 <CheckCircle size={24} />
               </div>
               <div>
-                <h4 className="font-black text-gray-800 text-lg uppercase leading-none">{tx.description}</h4>
+                <h4 className="font-black text-gray-800 text-lg uppercase leading-none">{tx.description || tx.descricao}</h4>
                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1 block">
-                  {accounts.find(a => a.id === tx.accountId)?.name} • {formatDate(tx.dueDate || tx.receiveDate || '')}
+                  {accounts.find(a => a.id === tx.accountId)?.name} • {formatDate(tx.dueDate || tx.receiveDate || tx.vencimento)}
                 </span>
               </div>
             </div>
             <div className="text-right">
               <div className={`text-2xl font-black ${tx.type === 'credit' ? 'text-emerald-600' : 'text-red-500'} tracking-tighter`}>
-                {tx.type === 'credit' ? '+' : '-'}{formatCurrency(tx.amount)}
+                {tx.type === 'credit' ? '+' : '-'}{formatCurrency(tx.amount || tx.valor)}
               </div>
             </div>
           </div>
@@ -235,7 +233,7 @@ const Transactions: React.FC = () => {
                   <option value="">Conta</option>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
-                <CategorySelect userId={user!.uid} value={formData.categoryId || ''} direction={formData.type || 'debit'} onChange={(id) => setFormData({...formData, categoryId: id})} />
+                <CategorySelect userId={user!.uid} value={formData.categoriaId || ''} direction={formData.type as any || 'debit'} onChange={(id) => setFormData({...formData, categoriaId: id})} />
               </div>
 
               <button disabled={isProcessing} type="submit" className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">

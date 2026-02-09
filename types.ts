@@ -1,55 +1,57 @@
 
-export type TransactionType = 'credit' | 'debit';
-export type TransactionStatus = 'planned' | 'done' | 'late';
-export type RecurrenceFrequency = 'weekly' | 'monthly' | 'yearly' | 'everyXMonths' | 'workingDays';
-export type AccountKind = 'checking' | 'savings' | 'investment' | 'individual';
-export type CostType = 'fixed' | 'variable';
+export type TransactionType = 'pagar' | 'receber' | 'credit' | 'debit';
+export type TransactionStatus = 'previsto' | 'pago' | 'recebido' | 'atrasado' | 'cancelado' | 'planned' | 'done';
 
-export interface UserProfile {
-  uid: string;
-  displayName: string | null;
-  fullName?: string;
-  email: string | null;
-  phone?: string;
-  birthDate?: string;
-  address?: {
-    cep?: string;
-    logradouro?: string;
-    numero?: string;
-    complemento?: string;
-    bairro?: string;
-    cidade?: string;
-    estado?: string;
-  };
-  currency: string;
-  locale: string;
-  timezone: string;
-  avatarUrl?: string;
-  monthStartDay: number;
-  
-  // LGPD Consent
-  marketingOptIn: boolean;
-  marketingOptInAt?: any; // Timestamp
-  marketingOptInText?: string;
-  
-  createdAt: any;
-  updatedAt?: any;
+export interface RecurrenceConfig {
+  frequencia: 'semanal' | 'quinzenal' | 'mensal' | 'anual';
+  intervalo: number;
+  inicio: string; // YYYY-MM-DD
+  fim?: string | null;
 }
 
-export interface Account {
+export interface Transaction {
   id?: string;
   userId: string;
-  name: string;
-  kind: AccountKind;
-  initialBalance: number;
-  active: boolean;
-  hasCreditCard: boolean;
-  creditLimit?: number;
-  closingDay?: number;
-  isInvestment: boolean;
-  investmentType?: 'poupança' | 'tesouro' | 'fundo' | 'outros';
-  investedAmount?: number;
+  perfilId?: string; // ID que vincula ocorrências de uma mesma recorrência
+  tipo: TransactionType;
+  // Aliases for compatibility
+  type?: TransactionType;
+  descricao: string;
+  description?: string;
+  categoriaId: string;
+  categoryId?: string;
+  accountId: string;
+  valor: number;
+  amount?: number;
+  plannedAmount?: number;
+  vencimento: string; // YYYY-MM-DD (Data base para o fluxo)
+  dueDate?: string;
+  receiveDate?: string;
+  competenceMonth?: string;
+  status: TransactionStatus;
+  
+  recorrente: boolean;
+  recorrencia?: RecurrenceConfig;
+  
+  // Extended fields
+  isFixed?: boolean;
+  isRecurring?: boolean;
+  recurrenceGroupId?: string;
+  recurrenceMode?: 'none' | 'until' | 'count';
+  recurrence?: {
+    enabled: boolean;
+    frequency: 'monthly' | 'weekly' | 'none';
+    interval: number;
+    startMonth: string;
+    endMonth: string | null;
+    parentId: string | null;
+    pattern?: string;
+  };
+  costType?: 'variable' | 'fixed';
+
+  notas?: string;
   createdAt: any;
+  updatedAt: any;
 }
 
 export interface Category {
@@ -60,54 +62,38 @@ export interface Category {
   createdAt: any;
 }
 
-export interface Debt {
+export interface Account {
   id?: string;
   userId: string;
   name: string;
-  totalAmount: number;
-  monthlyPayment: number;
-  interestRate?: number;
-  dueDate?: number;
-  priority: 'low' | 'medium' | 'high';
-  createdAt: any;
+  initialBalance: number;
+  active: boolean;
+  // Extended fields
+  kind: 'checking' | 'savings' | 'investment';
+  hasCreditCard?: boolean;
+  creditLimit?: number;
+  closingDay?: number;
+  isInvestment?: boolean;
+  investmentType?: 'poupança' | 'tesouro' | 'fundo' | 'outros';
+  investedAmount?: number;
+  createdAt?: any;
 }
 
-export interface Transaction {
-  id?: string;
-  userId: string;
-  accountId: string;
-  categoryId: string;
-  type: TransactionType;
-  costType: CostType;
-  description: string;
-  plannedAmount: number; 
-  amount: number;        
-  competenceMonth: string; 
-  dueDate?: string; 
-  receiveDate?: string; 
-  status: TransactionStatus;
-  isFixed: boolean;
-  linkedProvisionId?: string | null;
-  
-  // Novos campos de recorrência fixos
-  isRecurring: boolean;
-  recurrenceGroupId?: string;
-  recurrenceMode?: 'none' | 'until' | 'count';
-  recurrenceEndMonth?: string;
-  recurrenceCount?: number;
-  recurrenceStartMonth?: string;
-
-  recurrence: {
-    enabled: boolean;
-    frequency: RecurrenceFrequency;
-    interval: number | null;
-    startMonth: string;
-    endMonth: string | null;
-    parentId: string | null;
+export interface UserProfile {
+  uid: string;
+  displayName: string | null;
+  fullName?: string;
+  currency: string;
+  email?: string;
+  phone?: string;
+  birthDate?: string;
+  avatarUrl?: string;
+  address?: {
+    logradouro: string;
   };
-  notes?: string;
-  createdAt: any;
-  updatedAt: any;
+  marketingOptIn?: boolean;
+  marketingOptInAt?: any;
+  marketingOptInText?: string;
 }
 
 export interface Goal {
@@ -115,10 +101,21 @@ export interface Goal {
   userId: string;
   name: string;
   targetAmount: number;
+  currentAmount: number;
   targetDate: string;
   priority: number;
   description?: string;
-  currentAmount: number;
   createdAt: any;
   updatedAt: any;
+}
+
+export interface Debt {
+  id?: string;
+  userId: string;
+  name: string;
+  totalAmount: number;
+  monthlyPayment: number;
+  interestRate: number;
+  priority?: string;
+  createdAt: any;
 }
