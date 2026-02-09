@@ -1,121 +1,113 @@
 
+
 import { firebaseEnabled } from '../lib/firebase';
 import { localDbClient } from './localDbClient';
-import { Transaction } from '../types';
+import { Transaction, TransactionStatus } from '../types';
+import { addMonthsToMonthKey } from '../utils/formatters';
 
-// Janela de geração de recorrência (em meses)
 const RECURRENCE_WINDOW = 12;
-
-/**
- * Calcula a próxima data baseado na frequência
- */
-const getNextDate = (dateStr: string, freq: string, interval: number): string => {
-  const d = new Date(dateStr + 'T12:00:00');
-  if (freq === 'mensal') d.setMonth(d.getMonth() + interval);
-  else if (freq === 'semanal') d.setDate(d.getDate() + (7 * interval));
-  else if (freq === 'quinzenal') d.setDate(d.getDate() + (15 * interval));
-  else if (freq === 'anual') d.setFullYear(d.getFullYear() + interval);
-  
-  return d.toISOString().split('T')[0];
-};
-
-/**
- * ADICIONAR CONTA (Com suporte a recorrência)
- */
-export const addAccountEntry = async (data: Partial<Transaction>) => {
-  const entries: Partial<Transaction>[] = [];
-  const perfilId = data.recorrente ? `perfil_${Math.random().toString(36).substr(2, 9)}` : undefined;
-  
-  // Criar primeira ocorrência (ou única)
-  const baseEntry = {
-    ...data,
-    perfilId,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  entries.push(baseEntry);
-
-  // Se for recorrente, gerar prole
-  if (data.recorrente && data.recorrencia) {
-    let currentDate = data.vencimento!;
-    for (let i = 1; i < RECURRENCE_WINDOW; i++) {
-      currentDate = getNextDate(currentDate, data.recorrencia.frequencia, data.recorrencia.intervalo);
-      entries.push({
-        ...baseEntry,
-        vencimento: currentDate,
-        status: 'previsto' // Futuros são sempre previstos
-      });
-    }
-  }
-
-  const promises = entries.map(entry => {
-    return localDbClient.addTransaction(entry);
-  });
-
-  return Promise.all(promises);
-};
-
-/**
- * ATUALIZAR CONTA
- */
-export const updateAccountEntry = async (id: string, data: Partial<Transaction>, mode: 'single' | 'future' = 'single') => {
-  if (mode === 'single') {
-    return localDbClient.updateTransaction(id, data);
-  }
-
-  // Se for 'future', precisamos buscar o perfilId e atualizar todos >= data atual
-  const all = await getEntries(data.userId!);
-  const current = all.find(t => t.id === id);
-  if (!current?.perfilId) return localDbClient.updateTransaction(id, data);
-
-  const targets = all.filter(t => t.perfilId === current.perfilId && t.vencimento >= current.vencimento);
-  const promises = targets.map(t => localDbClient.updateTransaction(t.id!, data));
-  return Promise.all(promises);
-};
 
 export const getEntries = async (userId: string): Promise<Transaction[]> => {
   const data = await localDbClient.getTransactions(userId);
   return (data as any[]).map(t => ({
     ...t,
     tipo: t.tipo || (t.type === 'credit' ? 'receber' : 'pagar'),
-    vencimento: t.vencimento || t.dueDate || t.receiveDate,
-    status: t.status === 'done' ? (t.tipo === 'receber' ? 'recebido' : 'pago') : (t.status || 'previsto')
+    vencimento: t.vencimento || t.dueDate || t.receiveDate || '',
+    competenceMonth: t.competenceMonth || (t.vencimento ? t.vencimento.substring(0, 7) : ''),
+    status: t.status || 'previsto',
+    categoryGroup: t.categoryGroup || 'Outros'
   }));
 };
 
-export const deleteEntry = async (id: string, mode: 'single' | 'all' = 'single') => {
-  if (mode === 'single') return localDbClient.deleteTransaction(id);
+export const addAccountPlanEntry = async (data: Partial<Transaction>) => {
+  const entries: Partial<Transaction>[] = [];
+  const recurrenceGroupId = data.recorrente ? `rg-${Math.random().toString(36).substr(2, 9)}` : undefined;
   
-  const all = await getEntries("user-id-here"); // Simplificado
-  const current = all.find(t => t.id === id);
-  if (current?.perfilId) {
-    const targets = all.filter(t => t.perfilId === current.perfilId).map(t => t.id!);
-    return localDbClient.bulkDeleteTransactions(targets);
+  // Added explicit cast to TransactionStatus to fix assignment error
+  const baseEntry = {
+    ...data,
+    recurrenceGroupId,
+    isRecurring: data.recorrente,
+    status: 'previsto' as TransactionStatus,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  entries.push(baseEntry);
+
+  if (data.recorrente) {
+    let monthsToCreate = 0;
+    if (data.recurrenceMode === 'count') {
+      monthsToCreate = (data.recurrenceCount || 1) - 1;
+    } else if (data.recurrenceMode === 'until' && data.recurrenceEndMonth) {
+      // Simples cálculo de meses
+      const start = new Date(data.competenceMonth + '-01');
+      const end = new Date(data.recurrenceEndMonth + '-01');
+      monthsToCreate = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    } else {
+      monthsToCreate = RECURRENCE_WINDOW - 1;
+    }
+
+    for (let i = 1; i <= monthsToCreate; i++) {
+      const nextMonth = addMonthsToMonthKey(data.competenceMonth!, i);
+      const nextVencimento = data.vencimento ? addMonthsToDateString(data.vencimento, i) : '';
+      // Added explicit cast to TransactionStatus to fix assignment error
+      entries.push({
+        ...baseEntry,
+        status: 'previsto' as TransactionStatus,
+        competenceMonth: nextMonth,
+        vencimento: nextVencimento,
+      });
+    }
   }
-  return localDbClient.deleteTransaction(id);
+
+  const promises = entries.map(entry => localDbClient.addTransaction(entry));
+  return Promise.all(promises);
 };
 
-// Aliases for the app
-export const getTransactions = getEntries;
-export const addTransaction = localDbClient.addTransaction;
-export const updateTransaction = localDbClient.updateTransaction;
-export const addProvisionSeries = localDbClient.addTransaction; // Placeholder
-export const updateProvisionSeries = localDbClient.updateTransaction; // Placeholder
-export const deleteRecurringSeries = localDbClient.bulkDeleteTransactions; // Placeholder
+export const updateAccountPlanSeries = async (currentTx: Transaction, updatedFields: Partial<Transaction>, scope: 'current' | 'forward' | 'all') => {
+  const txs = await getEntries(currentTx.userId);
+  const groupId = currentTx.recurrenceGroupId;
+  if (!groupId) return localDbClient.updateTransaction(currentTx.id!, updatedFields);
 
-// Goals and Debts
+  let targetIds: string[] = [];
+  const series = txs.filter(t => t.recurrenceGroupId === groupId);
+
+  if (scope === 'current') targetIds = [currentTx.id!];
+  else if (scope === 'forward') targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
+  else if (scope === 'all') targetIds = series.map(t => t.id!);
+
+  return localDbClient.bulkUpdateTransactions(targetIds, { ...updatedFields, updatedAt: new Date().toISOString() });
+};
+
+export const deleteAccountPlanSeries = async (currentTx: Transaction, scope: 'current' | 'forward' | 'all') => {
+  const txs = await getEntries(currentTx.userId);
+  const groupId = currentTx.recurrenceGroupId;
+  if (!groupId) return localDbClient.deleteTransaction(currentTx.id!);
+
+  let targetIds: string[] = [];
+  const series = txs.filter(t => t.recurrenceGroupId === groupId);
+
+  if (scope === 'current') targetIds = [currentTx.id!];
+  else if (scope === 'forward') targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
+  else if (scope === 'all') targetIds = series.map(t => t.id!);
+
+  return localDbClient.bulkDeleteTransactions(targetIds);
+};
+
+// Auxiliares
+function addMonthsToDateString(dateStr: string, months: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split('T')[0];
+}
+
+export const getTransactions = getEntries;
+export { getAccounts, addAccount, updateAccount, deleteAccount, getCategories, createCategory, saveUserProfile, wipeUserData } from './db_base_logic';
 export const getGoals = localDbClient.getGoals;
 export const getDebts = localDbClient.getDebts;
 export const getAdminUsersForExport = async () => [];
 
-// Re-exports das funções básicas de Categoria/Conta
-export { 
-  getAccounts, 
-  addAccount, 
-  updateAccount, 
-  deleteAccount, 
-  getCategories, 
-  createCategory, 
-  saveUserProfile, 
-  wipeUserData 
-} from './db_base_logic';
+// Added missing exports for AccountsManager to fix module member errors
+export const deleteEntry = localDbClient.deleteTransaction;
+export const updateAccountEntry = localDbClient.updateTransaction;

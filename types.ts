@@ -1,4 +1,5 @@
 
+
 export type TransactionType = 'pagar' | 'receber' | 'credit' | 'debit';
 export type TransactionStatus = 'previsto' | 'pago' | 'recebido' | 'atrasado' | 'cancelado' | 'planned' | 'done';
 
@@ -12,42 +13,33 @@ export interface RecurrenceConfig {
 export interface Transaction {
   id?: string;
   userId: string;
-  perfilId?: string; // ID que vincula ocorrências de uma mesma recorrência
+  perfilId?: string; 
   tipo: TransactionType;
-  // Aliases for compatibility
-  type?: TransactionType;
+  type?: TransactionType; // Alias
   descricao: string;
-  description?: string;
-  categoriaId: string;
-  categoryId?: string;
-  accountId: string;
+  description?: string; // Alias
   valor: number;
-  amount?: number;
-  plannedAmount?: number;
-  vencimento: string; // YYYY-MM-DD (Data base para o fluxo)
-  dueDate?: string;
-  receiveDate?: string;
-  competenceMonth?: string;
+  amount?: number; // Alias
+  plannedAmount?: number; // Alias
+  vencimento: string; // YYYY-MM-DD
+  dueDate?: string; // Alias
+  receiveDate?: string; // Added to fix missing property errors in Transactions.tsx and Reports.tsx
+  competenceMonth: string; // YYYY-MM
   status: TransactionStatus;
   
-  recorrente: boolean;
-  recorrencia?: RecurrenceConfig;
+  // Categorização
+  categoryGroup: string; // Grupo fixo (Habitação, Alimentação, etc)
+  categoriaId?: string; // Categoria detalhada (opcional)
+  categoryId?: string; // Alias
+  accountId: string;
   
-  // Extended fields
-  isFixed?: boolean;
+  // Recorrência
+  recorrente: boolean;
   isRecurring?: boolean;
   recurrenceGroupId?: string;
   recurrenceMode?: 'none' | 'until' | 'count';
-  recurrence?: {
-    enabled: boolean;
-    frequency: 'monthly' | 'weekly' | 'none';
-    interval: number;
-    startMonth: string;
-    endMonth: string | null;
-    parentId: string | null;
-    pattern?: string;
-  };
-  costType?: 'variable' | 'fixed';
+  recurrenceEndMonth?: string;
+  recurrenceCount?: number;
 
   notas?: string;
   createdAt: any;
@@ -68,32 +60,35 @@ export interface Account {
   name: string;
   initialBalance: number;
   active: boolean;
-  // Extended fields
   kind: 'checking' | 'savings' | 'investment';
+  createdAt?: any;
+  
+  // Added properties to fix missing property errors in Accounts.tsx and localDbClient.ts
   hasCreditCard?: boolean;
   creditLimit?: number;
   closingDay?: number;
   isInvestment?: boolean;
   investmentType?: 'poupança' | 'tesouro' | 'fundo' | 'outros';
   investedAmount?: number;
-  createdAt?: any;
 }
 
 export interface UserProfile {
   uid: string;
   displayName: string | null;
-  fullName?: string;
   currency: string;
-  email?: string;
+  
+  // Added properties to fix missing property errors in Profile.tsx and AdminUsers.tsx
+  fullName?: string;
   phone?: string;
   birthDate?: string;
-  avatarUrl?: string;
   address?: {
-    logradouro: string;
+    logradouro?: string;
   };
   marketingOptIn?: boolean;
   marketingOptInAt?: any;
   marketingOptInText?: string;
+  avatarUrl?: string;
+  email?: string;
 }
 
 export interface Goal {
@@ -104,9 +99,10 @@ export interface Goal {
   currentAmount: number;
   targetDate: string;
   priority: number;
-  description?: string;
   createdAt: any;
-  updatedAt: any;
+  
+  // Added property to fix missing property error in Goals.tsx
+  description?: string;
 }
 
 export interface Debt {
@@ -116,6 +112,5 @@ export interface Debt {
   totalAmount: number;
   monthlyPayment: number;
   interestRate: number;
-  priority?: string;
   createdAt: any;
 }

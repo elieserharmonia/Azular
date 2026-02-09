@@ -3,9 +3,12 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import AccountsManager from './pages/AccountsManager';
+import Provision from './pages/Provision';
 import Profile from './pages/Profile';
+import RestartPlan from './pages/RestartPlan';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import Layout from './components/Layout';
 import { UserProfile } from './types';
 import { isPreview } from './utils/env';
 
@@ -31,17 +34,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-const Layout = () => {
-  return (
-    <div className="app-layout">
-      <Outlet />
-      {/* Navigation menu would go here */}
-    </div>
-  );
-};
-
 const App = () => {
-  const [user, setUser] = useState<any>(isPreview() ? { uid: 'preview-user' } : null);
+  const [user, setUser] = useState<any>(isPreview() ? { uid: 'preview-user', email: 'demo@azular.app' } : null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -57,12 +51,16 @@ const App = () => {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        
+        <Route path="/app" element={<ProtectedRoute><Layout><Outlet /></Layout></ProtectedRoute>}>
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="contas-plano" element={<Provision />} />
           <Route path="contas" element={<AccountsManager />} />
+          <Route path="restart-plan" element={<RestartPlan />} />
           <Route path="profile" element={<Profile />} />
           <Route index element={<Navigate to="/app/dashboard" />} />
         </Route>
+
         <Route path="/" element={<Navigate to="/app/dashboard" />} />
       </Routes>
     </AuthContext.Provider>
