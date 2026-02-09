@@ -36,6 +36,8 @@ export interface Transaction {
   // Recorrência
   recorrente: boolean;
   isRecurring?: boolean;
+  // Fix: Added isFixed property to resolve missing property errors in Transactions.tsx and Provision.tsx
+  isFixed?: boolean;
   recurrenceGroupId?: string;
   recurrenceMode?: 'none' | 'until' | 'count';
   recurrenceEndMonth?: string;

@@ -27,7 +27,7 @@ const Provision: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [activeTab, setActiveTab] = useState<'pagar' | 'receber'>('pagar');
+  const [viewMode, setViewMode] = useState<'payable' | 'receivable'>('payable');
   const [showModal, setShowModal] = useState(false);
   const [showScopeModal, setShowScopeModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
@@ -68,10 +68,19 @@ const Provision: React.FC = () => {
   }, [selectedYear]);
 
   const tableData = useMemo(() => {
-    const filtered = entries.filter(e => e.status === 'previsto' || e.status === 'planned');
+    // Filtragem conforme solicitado: status planned ou fixo, separado por tipo debit/credit
+    const plannedTxs = entries.filter(t => {
+      const isPlanned = t.status === 'planned' || t.status === 'previsto' || t.isFixed;
+      if (!isPlanned) return false;
+      
+      if (viewMode === 'payable') return t.tipo === 'pagar' || t.type === 'debit';
+      if (viewMode === 'receivable') return t.tipo === 'receber' || t.type === 'credit';
+      
+      return true;
+    });
     
     const buildGroup = (type: 'pagar' | 'receber') => {
-      const typeEntries = filtered.filter(e => e.tipo === type);
+      const typeEntries = plannedTxs.filter(e => e.tipo === type || (type === 'pagar' ? e.type === 'debit' : e.type === 'credit'));
       return CATEGORY_GROUPS.map(group => {
         const groupEntries = typeEntries.filter(e => e.categoryGroup === group);
         const descriptions = Array.from(new Set(groupEntries.map(e => e.descricao)));
@@ -110,12 +119,13 @@ const Provision: React.FC = () => {
     });
 
     return { pagarGroups, receberGroups, monthlySummary };
-  }, [entries, tableMonths]);
+  }, [entries, tableMonths, viewMode]);
 
   const handleOpenCreate = () => {
     setEditingItem(null);
     setFormData({
-      tipo: activeTab,
+      tipo: viewMode === 'payable' ? 'pagar' : 'receber',
+      type: viewMode === 'payable' ? 'debit' : 'credit',
       competenceMonth: getCurrentMonth(),
       vencimento: new Date().toISOString().split('T')[0],
       recorrente: false,
@@ -144,11 +154,11 @@ const Provision: React.FC = () => {
     setIsSaving(true);
     try {
       await addAccountPlanEntry({ ...formData, userId: user!.uid });
-      notifySuccess("Lançamento(s) criado(s) com sucesso!");
+      notifySuccess("Conta criada com sucesso!");
       setShowModal(false);
       loadData();
     } catch (err) {
-      notifyError("Erro ao salvar lançamento.");
+      notifyError("Erro ao salvar conta.");
     } finally {
       setIsSaving(false);
     }
@@ -178,7 +188,7 @@ const Provision: React.FC = () => {
     <div className="space-y-6 pb-32 animate-in fade-in">
       <header className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">Plano de Contas</h2>
+          <h2 className="text-3xl font-black uppercase tracking-tighter text-gray-900 leading-none">Contas</h2>
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-2">Gestão anual de compromissos</p>
         </div>
 
@@ -191,24 +201,29 @@ const Provision: React.FC = () => {
             onClick={handleOpenCreate}
             className="ml-4 px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center gap-2 hover:bg-blue-700 transition-all"
           >
-            <Plus size={14} /> Novo Lançamento
+            <Plus size={14} /> Nova Conta
           </button>
         </div>
       </header>
 
       {/* Tabs Selector */}
-      <div className="flex bg-white p-1.5 rounded-2xl border-2 border-gray-50 shadow-sm w-full md:w-max">
-        <button 
-          onClick={() => setActiveTab('pagar')}
-          className={`flex-1 md:flex-none px-10 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${activeTab === 'pagar' ? 'bg-red-500 text-white shadow-lg' : 'text-gray-400'}`}
+      <div className="flex bg-gray-100 rounded-xl p-1 w-full md:w-max">
+        <button
+          onClick={() => setViewMode('payable')}
+          className={viewMode === 'payable'
+            ? 'bg-blue-600 text-white px-8 py-2 rounded-lg text-xs font-black shadow-lg transition-all'
+            : 'px-8 py-2 text-xs font-black text-gray-500 hover:text-gray-700 transition-all'}
         >
-          <ArrowDownCircle size={14}/> Contas a Pagar
+          A PAGAR
         </button>
-        <button 
-          onClick={() => setActiveTab('receber')}
-          className={`flex-1 md:flex-none px-10 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${activeTab === 'receber' ? 'bg-emerald-500 text-white shadow-lg' : 'text-gray-400'}`}
+
+        <button
+          onClick={() => setViewMode('receivable')}
+          className={viewMode === 'receivable'
+            ? 'bg-emerald-600 text-white px-8 py-2 rounded-lg text-xs font-black shadow-lg transition-all'
+            : 'px-8 py-2 text-xs font-black text-gray-500 hover:text-gray-700 transition-all'}
         >
-          <ArrowUpCircle size={14}/> Contas a Receber
+          A RECEBER
         </button>
       </div>
 
@@ -232,7 +247,7 @@ const Provision: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {(activeTab === 'pagar' ? tableData.pagarGroups : tableData.receberGroups).map(g => (
+                {(viewMode === 'payable' ? tableData.pagarGroups : tableData.receberGroups).map(g => (
                   <React.Fragment key={g.group}>
                     <tr className="bg-blue-50/20">
                       <td className="sticky left-0 bg-blue-50 px-6 py-2 text-[10px] font-black text-blue-800 uppercase z-20 border-r">{g.group}</td>
@@ -247,7 +262,7 @@ const Provision: React.FC = () => {
                           <td 
                             key={m} 
                             onClick={() => row.originals[m] && handleEdit(row.originals[m]!)}
-                            className={`px-4 py-3 text-center text-[10px] font-black cursor-pointer transition-all hover:scale-110 ${row.values[m] > 0 ? (activeTab === 'pagar' ? 'text-red-500' : 'text-emerald-600') : 'text-gray-200'}`}
+                            className={`px-4 py-3 text-center text-[10px] font-black cursor-pointer transition-all hover:scale-110 ${row.values[m] > 0 ? (viewMode === 'payable' ? 'text-red-500' : 'text-emerald-600') : 'text-gray-200'}`}
                           >
                             <div className="flex flex-col items-center">
                               {row.values[m] > 0 ? formatCurrency(row.values[m]) : '-'}
@@ -292,8 +307,8 @@ const Provision: React.FC = () => {
         <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl p-8 relative border-2 border-blue-50 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black uppercase tracking-tighter">
-                {editingItem ? 'Editar Lançamento' : (formData.tipo === 'pagar' ? 'Nova Conta a Pagar' : 'Nova Conta a Receber')}
+              <h3 className="text-xl font-black uppercase tracking-tighter text-gray-900">
+                {editingItem ? 'Editar Lançamento' : (viewMode === 'payable' ? 'Nova Conta a Pagar' : 'Nova Conta a Receber')}
               </h3>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={24}/></button>
             </div>
@@ -302,20 +317,35 @@ const Provision: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Grupo</label>
-                  <select 
-                    required 
-                    className="w-full font-black border-b-2 border-blue-50 bg-transparent outline-none pb-2 text-sm"
-                    value={formData.categoryGroup}
-                    onChange={e => setFormData({...formData, categoryGroup: e.target.value})}
+                  <select
+                    required
+                    value={formData.categoryGroup || ''}
+                    onChange={e =>
+                      setFormData({ ...formData, categoryGroup: e.target.value })
+                    }
+                    className="w-full font-black border-b-2 border-blue-50 pb-2 bg-transparent outline-none text-sm"
                   >
-                    {CATEGORY_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                    <option value="">Grupo...</option>
+                    <option>Habitação</option>
+                    <option>Alimentação</option>
+                    <option>Transporte</option>
+                    <option>Saúde</option>
+                    <option>Higiene</option>
+                    <option>Educação</option>
+                    <option>Lazer</option>
+                    <option>Assinaturas</option>
+                    <option>Impostos/Taxas</option>
+                    <option>Trabalho/Renda</option>
+                    <option>Reserva</option>
+                    <option>Dívidas</option>
+                    <option>Outros</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Categoria Detalhada (Opcional)</label>
                   <CategorySelect 
                     userId={user!.uid}
-                    direction={formData.tipo === 'pagar' ? 'debit' : 'credit'}
+                    direction={viewMode === 'payable' ? 'debit' : 'credit'}
                     value={formData.categoriaId || ''}
                     onChange={id => setFormData({...formData, categoriaId: id})}
                   />
@@ -328,7 +358,7 @@ const Provision: React.FC = () => {
                   required 
                   type="text" 
                   placeholder="Ex: Aluguel, Salário, Internet..."
-                  className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent"
+                  className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent text-gray-900"
                   value={formData.descricao}
                   onChange={e => setFormData({...formData, descricao: e.target.value})}
                 />
@@ -341,7 +371,7 @@ const Provision: React.FC = () => {
                     required 
                     type="text" 
                     placeholder="0,00"
-                    className="w-full text-2xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent"
+                    className="w-full text-2xl font-black border-b-2 border-blue-50 pb-2 outline-none focus:border-blue-600 bg-transparent text-gray-900"
                     value={formData.valor || ''}
                     onChange={e => setFormData({...formData, valor: e.target.value as any})}
                   />
@@ -351,7 +381,7 @@ const Provision: React.FC = () => {
                   <input 
                     required 
                     type="month" 
-                    className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none bg-transparent"
+                    className="w-full text-xl font-black border-b-2 border-blue-50 pb-2 outline-none bg-transparent text-gray-900"
                     value={formData.competenceMonth}
                     onChange={e => setFormData({...formData, competenceMonth: e.target.value})}
                   />
@@ -391,10 +421,10 @@ const Provision: React.FC = () => {
                       </button>
                     </div>
                     {formData.recurrenceMode === 'until' && (
-                      <input type="month" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" value={formData.recurrenceEndMonth || ''} onChange={e => setFormData({...formData, recurrenceEndMonth: e.target.value})}/>
+                      <input type="month" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs text-gray-900" value={formData.recurrenceEndMonth || ''} onChange={e => setFormData({...formData, recurrenceEndMonth: e.target.value})}/>
                     )}
                     {formData.recurrenceMode === 'count' && (
-                      <input type="number" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" placeholder="Quantidade de meses" value={formData.recurrenceCount || ''} onChange={e => setFormData({...formData, recurrenceCount: parseInt(e.target.value)})}/>
+                      <input type="number" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs text-gray-900" placeholder="Quantidade de meses" value={formData.recurrenceCount || ''} onChange={e => setFormData({...formData, recurrenceCount: parseInt(e.target.value)})}/>
                     )}
                   </div>
                 )}
@@ -431,7 +461,7 @@ const Provision: React.FC = () => {
               <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Repeat size={32}/>
               </div>
-              <h4 className="text-xl font-black uppercase tracking-tighter">Alcance da Operação</h4>
+              <h4 className="text-xl font-black uppercase tracking-tighter text-gray-900">Alcance da Operação</h4>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Este item faz parte de uma série recorrente.</p>
             </div>
 
