@@ -1,4 +1,5 @@
-import { app, firebaseEnabled } from "../lib/firebase";
+// Fix: Use getFirebaseApp instead of non-existent app export
+import { getFirebaseApp, firebaseEnabled } from "../lib/firebase";
 
 let dbInstance: any = null;
 
@@ -7,6 +8,9 @@ let dbInstance: any = null;
  * Implementa padrão Singleton para evitar erros de inicialização múltipla.
  */
 export async function getDb() {
+  // Fix: Obtain the app instance asynchronously to ensure it is initialized before use
+  const app = await getFirebaseApp();
+  
   if (!firebaseEnabled || !app) {
     throw new Error("FIRESTORE_DISABLED_IN_PREVIEW");
   }

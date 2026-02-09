@@ -1,7 +1,10 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+
 import { isPreview } from "../utils/env";
 
+/**
+ * CONFIGURAÇÃO DO FIREBASE
+ * Só é executada se NÃO for ambiente de preview.
+ */
 const firebaseConfig = {
   apiKey: "AIzaSyAzL6XU1p62YK0Nc5uMwcofHegTwW_Eoig",
   authDomain: "financeiro-domestico-d0bde.firebaseapp.com",
@@ -13,7 +16,17 @@ const firebaseConfig = {
 
 const isPre = isPreview();
 
-// No Preview, forçamos o desligamento completo do Firebase
-export const app = isPre ? null : (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig));
-export const auth = isPre ? null : (app ? getAuth(app) : null);
-export const firebaseEnabled = !isPre && !!app;
+// Flag global para o sistema
+export const firebaseEnabled = !isPre;
+
+// Instâncias carregadas sob demanda (Lazy)
+let appInstance: any = null;
+
+export const getFirebaseApp = async () => {
+  if (!firebaseEnabled) return null;
+  if (appInstance) return appInstance;
+
+  const { initializeApp, getApps, getApp } = await import("firebase/app");
+  appInstance = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  return appInstance;
+};

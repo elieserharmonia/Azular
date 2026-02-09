@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { firebaseEnabled } from './lib/firebase';
+import { firebaseEnabled, getFirebaseApp } from './lib/firebase';
 import { isPreview } from './utils/env';
 
 // Pages
@@ -23,6 +24,7 @@ import AdminUsers from './pages/AdminUsers';
 import Layout from './components/Layout';
 import LoadingScreen from './components/LoadingScreen';
 import { ToastProvider } from './context/ToastContext';
+import { CloudOff } from 'lucide-react';
 
 interface AuthContextType {
   user: any | null;
@@ -57,10 +59,11 @@ const App: React.FC = () => {
     let unsubscribeAuth: any = null;
 
     const initAuth = async () => {
-      // MODO PREVIEW: Resolvemos o loading imediatamente
+      // MODO PREVIEW: Forçar estado simulado
       if (isPreviewMode) {
         setUser({ uid: 'preview-user', email: 'demo@azular.app' });
-        setUserProfile({ 
+        const localProf = localStorage.getItem('azular_preview_profile');
+        setUserProfile(localProf ? JSON.parse(localProf) : { 
           displayName: 'Demo', 
           fullName: 'Usuário Demonstração',
           currency: 'BRL',
@@ -70,18 +73,15 @@ const App: React.FC = () => {
         return;
       }
 
-      // MODO NORMAL (FIREBASE)
+      // MODO FIREBASE: Importação dinâmica protegida
       if (firebaseEnabled) {
         try {
+          const app = await getFirebaseApp();
+          if (!app) { setLoading(false); return; }
+
           const { getAuth, onAuthStateChanged } = await import('firebase/auth');
           const { getFirestore, doc, onSnapshot } = (await import('firebase/firestore')) as any;
-          const { app } = await import('./lib/firebase');
           
-          if (!app) {
-            setLoading(false);
-            return;
-          }
-
           const auth = getAuth(app);
           const db = getFirestore(app);
 
@@ -91,10 +91,7 @@ const App: React.FC = () => {
               onSnapshot(doc(db, 'users', currentUser.uid), (snapshot: any) => {
                 if (snapshot.exists()) setUserProfile(snapshot.data());
                 setLoading(false);
-              }, (err: any) => {
-                console.warn("Snap erro:", err);
-                setLoading(false);
-              });
+              }, () => setLoading(false));
             } else {
               setUserProfile(null);
               setLoading(false);
@@ -105,7 +102,6 @@ const App: React.FC = () => {
           setLoading(false);
         }
       } else {
-        // Se Firebase não inicializar e não for preview (raro)
         setLoading(false);
       }
     };
@@ -118,8 +114,8 @@ const App: React.FC = () => {
     <ToastProvider>
       <AuthContext.Provider value={{ user, loading, userProfile, isPreview: isPreviewMode }}>
         {isPreviewMode && (
-          <div className="bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 text-center sticky top-0 z-[999] shadow-md">
-            Modo Preview (DEMO) — Dados locais salvos no navegador
+          <div className="bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest py-1.5 px-4 text-center sticky top-0 z-[1000] shadow-md flex items-center justify-center gap-2">
+            <CloudOff size={14} /> Modo Preview — Dados locais salvos no navegador
           </div>
         )}
         <Routes>
