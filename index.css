@@ -13,7 +13,6 @@
     overflow-x: hidden;
     overscroll-behavior-y: none;
     margin: 0;
-    /* Fundo cinza bem claro típico de apps de banco para destacar os cards brancos */
     @apply bg-[#F4F7FE] text-slate-900 transition-colors duration-300 font-sans;
   }
 

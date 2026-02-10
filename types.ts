@@ -42,6 +42,8 @@ export interface Transaction {
   recurrenceMode?: 'none' | 'until' | 'count';
   recurrenceEndMonth?: string;
   recurrenceCount?: number;
+  // Added recurrence property to fix type error in Transactions.tsx where it is handled dynamically
+  recurrence?: any;
 
   notas?: string;
   createdAt: any;
