@@ -1,4 +1,3 @@
-
 import { firebaseEnabled } from '../lib/firebase';
 import { dbClient } from './dbClient';
 import { Transaction, TransactionStatus } from '../types';

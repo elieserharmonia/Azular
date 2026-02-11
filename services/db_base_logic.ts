@@ -1,4 +1,3 @@
-
 import { dbClient } from './dbClient';
 import { getDb } from './firestoreClient';
 import { firebaseEnabled } from '../lib/firebase';
@@ -22,17 +21,28 @@ export const createCategory = async (userId: string, name: string, direction: an
 export const saveUserProfile = async (uid: string, data: any) => {
   if (!firebaseEnabled) {
     const profileStr = safeStorage.get('azular_preview_profile') || '{}';
-    const profile = JSON.parse(profileStr);
+    let profile = {};
+    try {
+      profile = JSON.parse(profileStr);
+    } catch (e) {
+      profile = {};
+    }
     const newProfile = { ...profile, ...data, uid };
     safeStorage.set('azular_preview_profile', JSON.stringify(newProfile));
     return;
   }
-  const db = await getDb();
-  const { doc, setDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-  return setDoc(doc(db, 'users', uid), {
-    ...data,
-    updatedAt: serverTimestamp()
-  }, { merge: true });
+  
+  try {
+    const db = await getDb();
+    const { doc, setDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+    return setDoc(doc(db, 'users', uid), {
+      ...data,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error("Error saving user profile to Firestore:", err);
+    throw err;
+  }
 };
 
 export const wipeUserData = async (userId: string) => {
@@ -40,7 +50,9 @@ export const wipeUserData = async (userId: string) => {
     return (dbClient as any).resetUser(userId);
   }
   
-  // Basic Firestore wipe (could be expanded)
-  // For build safety, we return a mock success
-  return { deletedCount: 0, message: "Limpeza completa não suportada em Firestore via Client SDK" };
+  // Basic Firestore wipe (requires batch operations not fully exposed here)
+  return { 
+    deletedCount: 0, 
+    message: "Limpeza completa não suportada diretamente via Client SDK para Firestore." 
+  };
 };
