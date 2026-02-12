@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import AccountsManager from './pages/AccountsManager';
 import Provision from './pages/Provision';
@@ -11,6 +11,9 @@ import Signup from './pages/Signup';
 import Layout from './components/Layout';
 import { UserProfile } from './types';
 import { isPreview } from './utils/env';
+import { getAuthClient } from './services/authClient';
+import { saveUserProfile } from './services/db';
+import { firebaseEnabled } from './lib/firebase';
 
 interface AuthContextType {
   user: any;
@@ -35,15 +38,69 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = () => {
-  const [user, setUser] = useState<any>(isPreview() ? { uid: 'preview-user', email: 'demo@azular.app' } : null);
+  const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const isPreviewMode = isPreview();
+
+  useEffect(() => {
+    let unsubscribe: () => void = () => {};
+
+    const initAuth = async () => {
+      console.log("[Auth] Init phase. isPreviewMode =", isPreviewMode);
+
+      if (isPreviewMode) {
+        console.log("[Auth] Preview mode detected. Setting mock user.");
+        setUser({ uid: 'preview-user', email: 'demo@azular.app' });
+        setLoading(false);
+        return;
+      }
+
+      if (!firebaseEnabled) {
+        console.warn("[Auth] Firebase not enabled and not in preview. App might be misconfigured.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const auth = await getAuthClient();
+        unsubscribe = auth.onAuthStateChanged(async (u: any) => {
+          console.log("[Auth] onAuthStateChanged user =", u?.uid || "null");
+          setUser(u);
+          
+          if (u) {
+            // Se o usuário logou, garantimos que o perfil base exista
+            try {
+              const defaultProfile = {
+                uid: u.uid,
+                displayName: u.displayName || 'Usuário',
+                currency: 'BRL',
+                email: u.email
+              };
+              // saveUserProfile no db_base_logic lida com merge
+              await saveUserProfile(u.uid, defaultProfile);
+            } catch (e) {
+              console.warn("[Auth] Failed to auto-sync profile:", e);
+            }
+          }
+          
+          setLoading(false);
+        });
+      } catch (err) {
+        console.error("[Auth] Setup error:", err);
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+    return () => unsubscribe();
+  }, [isPreviewMode]);
 
   const value = {
     user,
     userProfile,
     loading,
-    isPreview: isPreview()
+    isPreview: isPreviewMode
   };
 
   return (
