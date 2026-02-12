@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App.tsx';
 import { 
@@ -14,7 +13,7 @@ import { formatCurrency, getCurrentMonth, getMonthName, addMonthsToMonthKey } fr
 import { parseNumericValue } from '../utils/number.ts';
 import { useToast } from '../context/ToastContext.tsx';
 import { 
-  ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, ArrowUpCircle, ArrowDownCircle, Search, Calendar, LayoutGrid, List as ListIcon, Info
+  ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, ArrowUpCircle, ArrowDownCircle, Calendar, LayoutGrid, List as ListIcon, Info
 } from 'lucide-react';
 
 const CATEGORY_DEFAULTS = ['Habitação', 'Alimentação', 'Transporte', 'Saúde', 'Higiene', 'Educação', 'Lazer', 'Assinaturas', 'Impostos/Taxas', 'Trabalho/Renda', 'Reserva', 'Dívidas', 'Outros'];
@@ -115,8 +114,9 @@ const Provision: React.FC = () => {
     e.preventDefault();
     
     // Validações Básicas
+    const valorNum = parseNumericValue(formData.valor);
     if (!formData.descricao?.trim()) { notifyInfo("A descrição é obrigatória."); return; }
-    if (!formData.valor || parseNumericValue(formData.valor) <= 0) { notifyInfo("O valor deve ser maior que zero."); return; }
+    if (valorNum <= 0) { notifyInfo("O valor deve ser maior que zero."); return; }
     if (!formData.accountId) { notifyInfo("Selecione uma conta para o lançamento."); return; }
     if (!formData.categoryGroup) { notifyInfo("Selecione uma categoria."); return; }
 
@@ -134,7 +134,7 @@ const Provision: React.FC = () => {
     }
 
     // Se estiver editando um recorrente antigo, abre modal de escopo
-    if (editingItem && editingItem.recorrente) {
+    if (editingItem && (editingItem.recorrente || editingItem.isRecurring)) {
       setScopeTarget('update');
       setShowScopeModal(true);
       return;
@@ -142,27 +142,49 @@ const Provision: React.FC = () => {
 
     setIsSaving(true);
     try {
-      const payload = { ...formData };
-      
-      // Sanitização de segurança se NÃO for recorrente
-      if (!payload.recorrente) {
+      // Cria payload limpo (Sem undefined para não quebrar o Firestore)
+      const isRec = !!formData.recorrente;
+      const payload: any = {
+        userId: user!.uid,
+        tipo: formData.tipo || viewMode,
+        type: (formData.tipo === 'receber' ? 'credit' : 'debit'),
+        descricao: formData.descricao?.trim(),
+        valor: valorNum,
+        amount: valorNum,
+        plannedAmount: valorNum,
+        vencimento: formData.vencimento,
+        competenceMonth: formData.competenceMonth,
+        accountId: formData.accountId,
+        categoryGroup: formData.categoryGroup,
+        recorrente: isRec,
+        isRecurring: isRec,
+        status: 'previsto',
+        updatedAt: new Date().toISOString()
+      };
+
+      if (isRec) {
+        payload.recurrenceMode = formData.recurrenceMode;
+        payload.recurrenceEndMonth = formData.recurrenceEndMonth || null;
+        payload.recurrenceCount = formData.recurrenceCount || null;
+      } else {
         payload.recurrenceMode = 'none';
-        payload.recurrenceEndMonth = undefined;
-        payload.recurrenceCount = undefined;
-        payload.recurrenceGroupId = undefined;
+        payload.recurrenceEndMonth = null;
+        payload.recurrenceCount = null;
+        payload.recurrenceGroupId = null;
       }
 
       if (editingItem) {
         await updateAccountPlanSeries(editingItem, payload, 'current');
         notifySuccess("Atualizado!");
       } else {
-        await addAccountPlanEntry({ ...payload, userId: user!.uid });
+        await addAccountPlanEntry(payload);
         notifySuccess("Lançamento criado!");
       }
       setShowModal(false);
       loadData();
     } catch (err) {
-      notifyError("Erro ao salvar.");
+      console.error("[Provision] Erro ao salvar:", err);
+      notifyError("Erro ao salvar. Verifique os dados.");
     } finally {
       setIsSaving(false);
     }
@@ -171,12 +193,28 @@ const Provision: React.FC = () => {
   const confirmScopeAction = async (scope: RecurrenceScope) => {
     setIsSaving(true);
     try {
-      const payload = { ...formData };
-      if (!payload.recorrente) {
+      const valorNum = parseNumericValue(formData.valor);
+      const isRec = !!formData.recorrente;
+      
+      const payload: any = {
+        descricao: formData.descricao?.trim(),
+        valor: valorNum,
+        amount: valorNum,
+        plannedAmount: valorNum,
+        vencimento: formData.vencimento,
+        competenceMonth: formData.competenceMonth,
+        accountId: formData.accountId,
+        categoryGroup: formData.categoryGroup,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!isRec) {
+        payload.recorrente = false;
+        payload.isRecurring = false;
         payload.recurrenceMode = 'none';
-        payload.recurrenceEndMonth = undefined;
-        payload.recurrenceCount = undefined;
-        payload.recurrenceGroupId = undefined;
+        payload.recurrenceEndMonth = null;
+        payload.recurrenceCount = null;
+        payload.recurrenceGroupId = null;
       }
 
       if (scopeTarget === 'update') {
@@ -356,7 +394,7 @@ const Provision: React.FC = () => {
               <div className="p-6 bg-gray-50 rounded-[2rem] border-2 border-gray-100 space-y-4">
                 <label className="flex items-center justify-between cursor-pointer">
                   <span className="text-[10px] font-black uppercase text-gray-500">Repetir Mensalmente?</span>
-                  <input type="checkbox" className="w-6 h-6 rounded-lg accent-blue-600" checked={formData.recorrente} onChange={e => setFormData({...formData, recorrente: e.target.checked, recurrenceMode: e.target.checked ? 'until' : 'none'})}/>
+                  <input type="checkbox" className="w-6 h-6 rounded-lg accent-blue-600" checked={!!formData.recorrente} onChange={e => setFormData({...formData, recorrente: e.target.checked, recurrenceMode: e.target.checked ? 'until' : 'none'})}/>
                 </label>
 
                 {formData.recorrente && (

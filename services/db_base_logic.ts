@@ -1,37 +1,43 @@
-import { dbClient } from './dbClient.ts';
-import { getDb } from './firestoreClient.ts';
-import { firebaseEnabled } from '../lib/firebase.ts';
-import { safeStorage } from '../utils/storage.ts';
+function isPlainObject(v: any) {
+  return v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date);
+}
 
-export const getAccounts = (userId: string) => dbClient.getAccounts(userId);
-export const addAccount = (data: any) => dbClient.addAccount(data);
-export const updateAccount = (id: string, data: any) => dbClient.updateAccount(id, data);
-export const deleteAccount = (id: string) => dbClient.deleteAccount(id);
-export const getCategories = (userId: string) => dbClient.getCategories(userId);
+/**
+ * Remove undefined, troca NaN por null, e normaliza strings vazias.
+ * (Firestore odeia undefined / NaN)
+ */
+export function sanitizeForFirestore<T extends Record<string, any>>(input: T): T {
+  const out: any = Array.isArray(input) ? [] : {};
 
-export const createCategory = async (userId: string, name: string, direction: any) => {
-  if ('createCategory' in dbClient) {
-    return (dbClient as any).createCategory(userId, name, direction);
-  } else if ('addCategory' in dbClient) {
-    return (dbClient as any).addCategory(userId, name, direction);
-  }
-  throw new Error("createCategory not implemented in current dbClient");
-};
+  for (const [k, v] of Object.entries(input)) {
+    if (v === undefined) continue;
 
-export const saveUserProfile = async (uid: string, data: any) => {
-  if (!firebaseEnabled) {
-    const profileStr = safeStorage.get('azular_preview_profile') || '{}';
-    let profile = {};
-    try {
-      profile = JSON.parse(profileStr);
-    } catch (e) {
-      profile = {};
+    if (typeof v === "number" && Number.isNaN(v)) {
+      out[k] = null;
+      continue;
     }
-    const newProfile = { ...profile, ...data, uid };
-    safeStorage.set('azular_preview_profile', JSON.stringify(newProfile));
-    return;
+
+    if (typeof v === "string" && v.trim() === "") {
+      out[k] = null;
+      continue;
+    }
+
+    if (Array.isArray(v)) {
+      out[k] = v.map((x) => (isPlainObject(x) ? sanitizeForFirestore(x) : x));
+      continue;
+    }
+
+    if (isPlainObject(v)) {
+      out[k] = sanitizeForFirestore(v);
+      continue;
+    }
+
+    out[k] = v;
   }
-  
+
+  return out;
+}
+
   try {
     const db = await getDb();
     const { doc, setDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
