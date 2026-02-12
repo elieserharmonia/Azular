@@ -7,8 +7,8 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navItems = [
     { to: '/app/dashboard', icon: <Home size={22} />, label: 'Início' },
-    { to: '/app/contas-plano', icon: <CalendarRange size={22} />, label: 'Plano Anual' },
-    { to: '/app/contas', icon: <BarChart2 size={22} />, label: 'Minhas Contas' },
+    { to: '/app/contas-plano', icon: <CalendarRange size={22} />, label: 'Receber & Pagar' },
+    { to: '/app/contas', icon: <BarChart2 size={22} />, label: 'Lançamentos' },
     { to: '/app/restart-plan', icon: <HeartPulse size={22} />, label: 'Recomeço' },
     { to: '/app/profile', icon: <User size={22} />, label: 'Perfil' },
   ];

@@ -1,3 +1,4 @@
+
 import { firebaseEnabled } from '../lib/firebase.ts';
 import { dbClient } from './dbClient.ts';
 import { Transaction, TransactionStatus, TransactionType } from '../types.ts';
@@ -5,6 +6,8 @@ import { addMonthsToMonthKey, getCurrentMonth } from '../utils/formatters.ts';
 import { parseNumericValue } from '../utils/number.ts';
 
 const RECURRENCE_WINDOW = 12;
+
+export type RecurrenceScope = 'current' | 'forward' | 'backward' | 'all' | 'range';
 
 /**
  * SANITIZER: Normaliza uma transação garantindo integridade dos dados.
@@ -24,8 +27,13 @@ export const normalizeTransaction = (t: any): Transaction => {
   const validTypes: TransactionType[] = ['pagar', 'receber', 'credit', 'debit'];
   const tipo = validTypes.includes(t.tipo) ? t.tipo : (t.type || 'pagar');
   
+  // Mapeamento planned -> previsto para compatibilidade
+  let status = t.status;
+  if (status === 'planned') status = 'previsto';
+  if (status === 'done') status = tipo === 'receber' ? 'recebido' : 'pago';
+  
   const validStatus: TransactionStatus[] = ['previsto', 'pago', 'recebido', 'atrasado', 'cancelado'];
-  const status = validStatus.includes(t.status) ? t.status : 'previsto';
+  const finalStatus = validStatus.includes(status) ? status : 'previsto';
 
   return {
     ...t,
@@ -42,7 +50,7 @@ export const normalizeTransaction = (t: any): Transaction => {
     dueDate: t.dueDate || vencimento,
     receiveDate: t.receiveDate || (tipo === 'receber' ? vencimento : undefined),
     competenceMonth: competence,
-    status: status as TransactionStatus,
+    status: finalStatus as TransactionStatus,
     categoryGroup: t.categoryGroup || 'Outros',
     accountId: t.accountId || '',
     recorrente: !!(t.recorrente || t.isRecurring),
@@ -120,37 +128,57 @@ export const addAccountPlanEntry = async (data: Partial<Transaction>) => {
   }
 };
 
-export const updateAccountPlanSeries = async (currentTx: Transaction, updatedFields: Partial<Transaction>, scope: 'current' | 'forward' | 'all') => {
+export const updateAccountPlanSeries = async (currentTx: Transaction, updatedFields: Partial<Transaction>, scope: RecurrenceScope, range?: { start: string, end: string }) => {
   const txs = await getEntries(currentTx.userId);
   const groupId = currentTx.recurrenceGroupId;
-  if (!groupId) return dbClient.updateTransaction(currentTx.id!, updatedFields);
+  
+  if (!groupId || scope === 'current') {
+    return dbClient.updateTransaction(currentTx.id!, { ...updatedFields, updatedAt: new Date().toISOString() });
+  }
 
   let targetIds: string[] = [];
   const series = txs.filter(t => t.recurrenceGroupId === groupId);
 
-  if (scope === 'current') targetIds = [currentTx.id!];
-  else if (scope === 'forward') targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
-  else if (scope === 'all') targetIds = series.map(t => t.id!);
+  if (scope === 'forward') {
+    targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
+  } else if (scope === 'backward') {
+    targetIds = series.filter(t => t.competenceMonth <= currentTx.competenceMonth).map(t => t.id!);
+  } else if (scope === 'all') {
+    targetIds = series.map(t => t.id!);
+  } else if (scope === 'range' && range) {
+    targetIds = series.filter(t => t.competenceMonth >= range.start && t.competenceMonth <= range.end).map(t => t.id!);
+  }
+
+  const payload = { ...updatedFields, updatedAt: new Date().toISOString() };
 
   if ('bulkUpdateTransactions' in dbClient) {
-    return (dbClient as any).bulkUpdateTransactions(targetIds, { ...updatedFields, updatedAt: new Date().toISOString() });
+    return (dbClient as any).bulkUpdateTransactions(targetIds, payload);
   } else {
-    const promises = targetIds.map(id => dbClient.updateTransaction(id, updatedFields));
+    const promises = targetIds.map(id => dbClient.updateTransaction(id, payload));
     return Promise.all(promises);
   }
 };
 
-export const deleteAccountPlanSeries = async (currentTx: Transaction, scope: 'current' | 'forward' | 'all') => {
+export const deleteAccountPlanSeries = async (currentTx: Transaction, scope: RecurrenceScope, range?: { start: string, end: string }) => {
   const txs = await getEntries(currentTx.userId);
   const groupId = currentTx.recurrenceGroupId;
-  if (!groupId) return dbClient.deleteTransaction(currentTx.id!);
+  
+  if (!groupId || scope === 'current') {
+    return dbClient.deleteTransaction(currentTx.id!);
+  }
 
   let targetIds: string[] = [];
   const series = txs.filter(t => t.recurrenceGroupId === groupId);
 
-  if (scope === 'current') targetIds = [currentTx.id!];
-  else if (scope === 'forward') targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
-  else if (scope === 'all') targetIds = series.map(t => t.id!);
+  if (scope === 'forward') {
+    targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
+  } else if (scope === 'backward') {
+    targetIds = series.filter(t => t.competenceMonth <= currentTx.competenceMonth).map(t => t.id!);
+  } else if (scope === 'all') {
+    targetIds = series.map(t => t.id!);
+  } else if (scope === 'range' && range) {
+    targetIds = series.filter(t => t.competenceMonth >= range.start && t.competenceMonth <= range.end).map(t => t.id!);
+  }
 
   if ('bulkDeleteTransactions' in dbClient) {
     return (dbClient as any).bulkDeleteTransactions(targetIds);
