@@ -116,7 +116,7 @@ export {
   createCategory, 
   saveUserProfile, 
   wipeUserData 
-} from './db_base_logic';
+} from './db_base_logic.ts';
 
 export const getGoals = dbClient.getGoals;
 export const getDebts = dbClient.getDebts;
