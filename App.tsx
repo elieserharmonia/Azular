@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import AccountsManager from './pages/AccountsManager';
 import Provision from './pages/Provision';
@@ -49,25 +49,26 @@ const App = () => {
 
     const initAuth = async () => {
       try {
-        console.log("[Auth] Init phase. isPreviewMode =", isPreviewMode);
+        console.log("[Auth] Booting system. isPreviewMode =", isPreviewMode);
 
         if (isPreviewMode) {
-          console.log("[Auth] Preview mode detected. Setting mock user.");
           setUser({ uid: 'preview-user', email: 'demo@azular.app' });
           setLoading(false);
           return;
         }
 
         if (!firebaseEnabled) {
-          console.warn("[Auth] Firebase not enabled and not in preview.");
+          console.warn("[Auth] Firebase disabled.");
           setLoading(false);
           return;
         }
 
+        // 1. Inicializa Cliente de Auth (Falha aqui é CRÍTICA)
         const auth = await getAuthClient();
+        
         unsubscribe = auth.onAuthStateChanged(async (u: any) => {
           try {
-            console.log("[Auth] onAuthStateChanged user =", u?.uid || "null");
+            console.log("[Auth] State changed:", u?.uid || "null");
             setUser(u);
             
             if (u) {
@@ -77,19 +78,21 @@ const App = () => {
                 currency: 'BRL',
                 email: u.email
               };
-              // Tentativa silenciosa de sincronizar perfil
+              
+              // 2. Sincronização de Perfil (Falha aqui é tratada, boot continua)
               saveUserProfile(u.uid, defaultProfile).catch(e => {
-                console.warn("[Auth] Perfil não pôde ser sincronizado, mas continuando...", e);
+                console.warn("[Auth] Falha não crítica ao sincronizar perfil:", e);
               });
             }
           } catch (e) {
-            console.error("[Auth] Erro no callback de onAuthStateChanged:", e);
+            console.error("[Auth] Erro no processamento do usuário logado:", e);
           } finally {
             setLoading(false);
           }
         });
       } catch (err: any) {
-        console.error("[Auth] Erro fatal no boot do Auth:", err);
+        // Erro crítico de infraestrutura (Ex: Firebase não responde)
+        console.error("[Auth] Falha fatal no boot do sistema:", err);
         setBootError(err);
         setLoading(false);
       }
@@ -99,9 +102,9 @@ const App = () => {
     return () => unsubscribe();
   }, [isPreviewMode]);
 
-  // Se houver um erro de boot CRÍTICO (Auth falhar totalmente)
+  // Se houver erro de boot de infraestrutura (DB offline ou Auth crashado)
   if (bootError) {
-    throw bootError; // Dispara o ErrorBoundary
+    throw bootError; // Dispara ErrorBoundary ("Ajuste Necessário")
   }
 
   const value = {

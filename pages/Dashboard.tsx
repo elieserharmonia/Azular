@@ -12,12 +12,11 @@ import {
   Calendar, 
   AlertCircle, 
   ChevronRight,
-  Wallet,
   CheckCircle2
 } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
-  const { user, userProfile, isPreview } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [entries, setEntries] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +28,7 @@ const Dashboard: React.FC = () => {
   const load = async () => {
     try {
       const data = await getEntries(user!.uid);
-      setEntries(data || []);
+      setEntries(Array.isArray(data) ? data : []);
     } catch (err) {
       console.warn("[Dashboard] Erro ao carregar entradas:", err);
       setEntries([]);
@@ -43,7 +42,7 @@ const Dashboard: React.FC = () => {
       const today = getTodayDate() || '';
       const month = today.substring(0, 7);
       
-      const monthEntries = entries.filter(e => e.vencimento && e.vencimento.startsWith(month));
+      const monthEntries = entries.filter(e => e && e.vencimento && e.vencimento.startsWith(month));
       
       const aPagar = monthEntries.filter(e => e.tipo === 'pagar' && e.status !== 'cancelado');
       const aReceber = monthEntries.filter(e => e.tipo === 'receber' && e.status !== 'cancelado');
@@ -53,7 +52,7 @@ const Dashboard: React.FC = () => {
         pagarReal: aPagar.filter(e => e.status === 'pago').reduce((acc, e) => acc + (e.valor || 0), 0),
         receberPrevisto: aReceber.reduce((acc, e) => acc + (e.valor || 0), 0),
         receberReal: aReceber.filter(e => e.status === 'recebido').reduce((acc, e) => acc + (e.valor || 0), 0),
-        atrasadas: entries.filter(e => e.vencimento && e.vencimento < today && !['pago', 'recebido', 'cancelado'].includes(e.status || '')).length
+        atrasadas: entries.filter(e => e && e.vencimento && e.vencimento < today && !['pago', 'recebido', 'cancelado'].includes(e.status || '')).length
       };
     } catch (err) {
       console.error("[Dashboard] Erro no cálculo de estatísticas:", err);
@@ -135,13 +134,13 @@ const Dashboard: React.FC = () => {
         
         <div className="space-y-3">
           {entries.slice(0, 5).map(entry => (
-            <div key={entry.id} className="bg-white p-5 rounded-[2rem] border-2 border-gray-50 flex items-center justify-between shadow-sm active:bg-gray-50 transition-colors">
+            <div key={entry.id} className="bg-white p-5 rounded-[2.5rem] border-2 border-gray-50 flex items-center justify-between shadow-sm active:bg-gray-50 transition-colors">
               <div className="flex items-center gap-4">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${entry.tipo === 'receber' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
                   {entry.tipo === 'receber' ? <ArrowUpCircle size={20}/> : <ArrowDownCircle size={20}/>}
                 </div>
                 <div>
-                  <p className="text-sm font-black text-gray-900 uppercase leading-none">{entry.descricao}</p>
+                  <p className="text-sm font-black text-gray-800 uppercase leading-none">{entry.descricao}</p>
                   <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mt-1">{entry.vencimento}</p>
                 </div>
               </div>
