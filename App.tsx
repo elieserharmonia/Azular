@@ -1,19 +1,18 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import Dashboard from './pages/Dashboard';
-import AccountsManager from './pages/AccountsManager';
-import Provision from './pages/Provision';
-import Profile from './pages/Profile';
-import RestartPlan from './pages/RestartPlan';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import Layout from './components/Layout';
-import { UserProfile } from './types';
-import { isPreview } from './utils/env';
-import { getAuthClient } from './services/authClient';
-import { saveUserProfile } from './services/db';
-import { firebaseEnabled } from './lib/firebase';
+import Dashboard from './pages/Dashboard.tsx';
+import AccountsManager from './pages/AccountsManager.tsx';
+import Provision from './pages/Provision.tsx';
+import Profile from './pages/Profile.tsx';
+import RestartPlan from './pages/RestartPlan.tsx';
+import Login from './pages/Login.tsx';
+import Signup from './pages/Signup.tsx';
+import Layout from './components/Layout.tsx';
+import { UserProfile } from './types.ts';
+import { isPreview } from './utils/env.ts';
+import { getAuthClient } from './services/authClient.ts';
+import { saveUserProfile } from './services/db.ts';
+import { firebaseEnabled } from './lib/firebase.ts';
 
 interface AuthContextType {
   user: any;
@@ -63,7 +62,6 @@ const App = () => {
           return;
         }
 
-        // 1. Inicializa Cliente de Auth (Falha aqui é CRÍTICA)
         const auth = await getAuthClient();
         
         unsubscribe = auth.onAuthStateChanged(async (u: any) => {
@@ -79,7 +77,6 @@ const App = () => {
                 email: u.email
               };
               
-              // 2. Sincronização de Perfil (Falha aqui é tratada, boot continua)
               saveUserProfile(u.uid, defaultProfile).catch(e => {
                 console.warn("[Auth] Falha não crítica ao sincronizar perfil:", e);
               });
@@ -91,7 +88,6 @@ const App = () => {
           }
         });
       } catch (err: any) {
-        // Erro crítico de infraestrutura (Ex: Firebase não responde)
         console.error("[Auth] Falha fatal no boot do sistema:", err);
         setBootError(err);
         setLoading(false);
@@ -102,9 +98,8 @@ const App = () => {
     return () => unsubscribe();
   }, [isPreviewMode]);
 
-  // Se houver erro de boot de infraestrutura (DB offline ou Auth crashado)
   if (bootError) {
-    throw bootError; // Dispara ErrorBoundary ("Ajuste Necessário")
+    throw bootError;
   }
 
   const value = {

@@ -1,23 +1,18 @@
-
-import { firebaseEnabled } from '../lib/firebase';
-import { dbClient } from './dbClient';
-import { Transaction, TransactionStatus, TransactionType } from '../types';
-import { addMonthsToMonthKey, getCurrentMonth } from '../utils/formatters';
-import { parseNumericValue } from '../utils/number';
+import { firebaseEnabled } from '../lib/firebase.ts';
+import { dbClient } from './dbClient.ts';
+import { Transaction, TransactionStatus, TransactionType } from '../types.ts';
+import { addMonthsToMonthKey, getCurrentMonth } from '../utils/formatters.ts';
+import { parseNumericValue } from '../utils/number.ts';
 
 const RECURRENCE_WINDOW = 12;
 
 /**
  * SANITIZER: Normaliza uma transação garantindo integridade dos dados.
- * Aplica as regras de negócio para fallback de valores nulos ou inválidos.
  */
 export const normalizeTransaction = (t: any): Transaction => {
-  // 1. Tratamento de Valores Numéricos (plannedAmount null -> 0)
   const amount = parseNumericValue(t.amount || t.valor || 0);
   const plannedAmount = parseNumericValue(t.plannedAmount ?? t.amount ?? t.valor ?? 0);
   
-  // 2. Tratamento de Datas e Competência
-  // Se não houver data nenhuma, lançamos erro para o getEntries ignorar o registro
   const rawDate = t.vencimento || t.dueDate || t.receiveDate;
   if (!rawDate && !t.competenceMonth) {
     throw new Error("Registro sem data válida para competência.");
@@ -26,7 +21,6 @@ export const normalizeTransaction = (t: any): Transaction => {
   const vencimento = rawDate || new Date().toISOString().split('T')[0];
   const competence = t.competenceMonth || (vencimento ? vencimento.substring(0, 7) : getCurrentMonth());
 
-  // 3. Tipagem e Status
   const validTypes: TransactionType[] = ['pagar', 'receber', 'credit', 'debit'];
   const tipo = validTypes.includes(t.tipo) ? t.tipo : (t.type || 'pagar');
   
@@ -49,10 +43,8 @@ export const normalizeTransaction = (t: any): Transaction => {
     receiveDate: t.receiveDate || (tipo === 'receber' ? vencimento : undefined),
     competenceMonth: competence,
     status: status as TransactionStatus,
-    // Categoria inexistente -> mover para Outros
     categoryGroup: t.categoryGroup || 'Outros',
     accountId: t.accountId || '',
-    // RecurrenceGroupId inválido/nulo -> tratar como não recorrente
     recorrente: !!(t.recorrente || t.isRecurring),
     isRecurring: !!(t.isRecurring || t.recorrente),
     recurrenceGroupId: t.recurrenceGroupId || undefined,
@@ -70,14 +62,13 @@ export const getEntries = async (userId: string): Promise<Transaction[]> => {
       try {
         return normalizeTransaction(t);
       } catch (err) {
-        // Logamos o erro mas continuamos o processamento (ignora o registro ruim)
         console.warn("[DB Sanitizer] Ignorando registro corrompido:", t?.id, err);
         return null;
       }
     }).filter((t): t is Transaction => t !== null);
   } catch (err) {
     console.error("[DB] Falha crítica no carregamento de transações:", err);
-    return []; // Retorna vazio para não travar o boot
+    return [];
   }
 };
 

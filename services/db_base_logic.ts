@@ -1,7 +1,7 @@
-import { dbClient } from './dbClient';
-import { getDb } from './firestoreClient';
-import { firebaseEnabled } from '../lib/firebase';
-import { safeStorage } from '../utils/storage';
+import { dbClient } from './dbClient.ts';
+import { getDb } from './firestoreClient.ts';
+import { firebaseEnabled } from '../lib/firebase.ts';
+import { safeStorage } from '../utils/storage.ts';
 
 export const getAccounts = (userId: string) => dbClient.getAccounts(userId);
 export const addAccount = (data: any) => dbClient.addAccount(data);
@@ -50,7 +50,6 @@ export const wipeUserData = async (userId: string) => {
     return (dbClient as any).resetUser(userId);
   }
   
-  // Basic Firestore wipe (requires batch operations not fully exposed here)
   return { 
     deletedCount: 0, 
     message: "Limpeza completa não suportada diretamente via Client SDK para Firestore." 

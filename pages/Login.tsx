@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
-import { getAuthClient } from '../services/authClient';
-import { useAuth } from '../App';
+import { getAuthClient } from '../services/authClient.ts';
+import { useAuth } from '../App.tsx';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
-import BrandLogo from '../components/BrandLogo';
-import { useToast } from '../context/ToastContext';
+import BrandLogo from '../components/BrandLogo.tsx';
+import { useToast } from '../context/ToastContext.tsx';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -30,7 +29,6 @@ const Login: React.FC = () => {
       return;
     }
 
-    // Timeout de diagnóstico para onAuthStateChanged
     const authTimeout = setTimeout(() => {
       if (loading) {
         console.warn("[Auth] Login taking too long. Possible state hang.");
@@ -48,7 +46,6 @@ const Login: React.FC = () => {
       console.log("[Auth] signIn success uid =", userCred.user.uid);
       clearTimeout(authTimeout);
       
-      // Navegação imediata após sucesso
       navigate('/app/dashboard');
     } catch (err: any) {
       clearTimeout(authTimeout);
