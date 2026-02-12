@@ -27,27 +27,38 @@ const Dashboard: React.FC = () => {
   }, [user]);
 
   const load = async () => {
-    const data = await getEntries(user!.uid);
-    setEntries(data);
-    setLoading(false);
+    try {
+      const data = await getEntries(user!.uid);
+      setEntries(data || []);
+    } catch (err) {
+      console.warn("[Dashboard] Erro ao carregar entradas:", err);
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const stats = useMemo(() => {
-    const today = getTodayDate();
-    const month = today.substring(0, 7);
-    
-    const monthEntries = entries.filter(e => e.vencimento.startsWith(month));
-    
-    const aPagar = monthEntries.filter(e => e.tipo === 'pagar' && e.status !== 'cancelado');
-    const aReceber = monthEntries.filter(e => e.tipo === 'receber' && e.status !== 'cancelado');
+    try {
+      const today = getTodayDate() || '';
+      const month = today.substring(0, 7);
+      
+      const monthEntries = entries.filter(e => e.vencimento && e.vencimento.startsWith(month));
+      
+      const aPagar = monthEntries.filter(e => e.tipo === 'pagar' && e.status !== 'cancelado');
+      const aReceber = monthEntries.filter(e => e.tipo === 'receber' && e.status !== 'cancelado');
 
-    return {
-      pagarPrevisto: aPagar.reduce((acc, e) => acc + e.valor, 0),
-      pagarReal: aPagar.filter(e => e.status === 'pago').reduce((acc, e) => acc + e.valor, 0),
-      receberPrevisto: aReceber.reduce((acc, e) => acc + e.valor, 0),
-      receberReal: aReceber.filter(e => e.status === 'recebido').reduce((acc, e) => acc + e.valor, 0),
-      atrasadas: entries.filter(e => e.vencimento < today && !['pago', 'recebido', 'cancelado'].includes(e.status)).length
-    };
+      return {
+        pagarPrevisto: aPagar.reduce((acc, e) => acc + (e.valor || 0), 0),
+        pagarReal: aPagar.filter(e => e.status === 'pago').reduce((acc, e) => acc + (e.valor || 0), 0),
+        receberPrevisto: aReceber.reduce((acc, e) => acc + (e.valor || 0), 0),
+        receberReal: aReceber.filter(e => e.status === 'recebido').reduce((acc, e) => acc + (e.valor || 0), 0),
+        atrasadas: entries.filter(e => e.vencimento && e.vencimento < today && !['pago', 'recebido', 'cancelado'].includes(e.status || '')).length
+      };
+    } catch (err) {
+      console.error("[Dashboard] Erro no cálculo de estatísticas:", err);
+      return { pagarPrevisto: 0, pagarReal: 0, receberPrevisto: 0, receberReal: 0, atrasadas: 0 };
+    }
   }, [entries]);
 
   if (loading) return null;
@@ -144,6 +155,11 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           ))}
+          {entries.length === 0 && (
+            <div className="py-10 text-center">
+              <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Nenhuma conta agendada...</p>
+            </div>
+          )}
         </div>
       </section>
     </div>

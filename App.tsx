@@ -41,53 +41,56 @@ const App = () => {
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bootError, setBootError] = useState<Error | null>(null);
   const isPreviewMode = isPreview();
 
   useEffect(() => {
     let unsubscribe: () => void = () => {};
 
     const initAuth = async () => {
-      console.log("[Auth] Init phase. isPreviewMode =", isPreviewMode);
-
-      if (isPreviewMode) {
-        console.log("[Auth] Preview mode detected. Setting mock user.");
-        setUser({ uid: 'preview-user', email: 'demo@azular.app' });
-        setLoading(false);
-        return;
-      }
-
-      if (!firebaseEnabled) {
-        console.warn("[Auth] Firebase not enabled and not in preview. App might be misconfigured.");
-        setLoading(false);
-        return;
-      }
-
       try {
+        console.log("[Auth] Init phase. isPreviewMode =", isPreviewMode);
+
+        if (isPreviewMode) {
+          console.log("[Auth] Preview mode detected. Setting mock user.");
+          setUser({ uid: 'preview-user', email: 'demo@azular.app' });
+          setLoading(false);
+          return;
+        }
+
+        if (!firebaseEnabled) {
+          console.warn("[Auth] Firebase not enabled and not in preview.");
+          setLoading(false);
+          return;
+        }
+
         const auth = await getAuthClient();
         unsubscribe = auth.onAuthStateChanged(async (u: any) => {
-          console.log("[Auth] onAuthStateChanged user =", u?.uid || "null");
-          setUser(u);
-          
-          if (u) {
-            // Se o usuário logou, garantimos que o perfil base exista
-            try {
+          try {
+            console.log("[Auth] onAuthStateChanged user =", u?.uid || "null");
+            setUser(u);
+            
+            if (u) {
               const defaultProfile = {
                 uid: u.uid,
                 displayName: u.displayName || 'Usuário',
                 currency: 'BRL',
                 email: u.email
               };
-              // saveUserProfile no db_base_logic lida com merge
-              await saveUserProfile(u.uid, defaultProfile);
-            } catch (e) {
-              console.warn("[Auth] Failed to auto-sync profile:", e);
+              // Tentativa silenciosa de sincronizar perfil
+              saveUserProfile(u.uid, defaultProfile).catch(e => {
+                console.warn("[Auth] Perfil não pôde ser sincronizado, mas continuando...", e);
+              });
             }
+          } catch (e) {
+            console.error("[Auth] Erro no callback de onAuthStateChanged:", e);
+          } finally {
+            setLoading(false);
           }
-          
-          setLoading(false);
         });
-      } catch (err) {
-        console.error("[Auth] Setup error:", err);
+      } catch (err: any) {
+        console.error("[Auth] Erro fatal no boot do Auth:", err);
+        setBootError(err);
         setLoading(false);
       }
     };
@@ -95,6 +98,11 @@ const App = () => {
     initAuth();
     return () => unsubscribe();
   }, [isPreviewMode]);
+
+  // Se houver um erro de boot CRÍTICO (Auth falhar totalmente)
+  if (bootError) {
+    throw bootError; // Dispara o ErrorBoundary
+  }
 
   const value = {
     user,
