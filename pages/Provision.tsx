@@ -16,7 +16,6 @@ import { useToast } from '../context/ToastContext.tsx';
 import { 
   ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, ArrowUpCircle, ArrowDownCircle, Search, Calendar, LayoutGrid, List as ListIcon, Info
 } from 'lucide-react';
-import CategorySelect from '../components/CategorySelect.tsx';
 
 const CATEGORY_DEFAULTS = ['Habitação', 'Alimentação', 'Transporte', 'Saúde', 'Higiene', 'Educação', 'Lazer', 'Assinaturas', 'Impostos/Taxas', 'Trabalho/Renda', 'Reserva', 'Dívidas', 'Outros'];
 
@@ -73,7 +72,6 @@ const Provision: React.FC = () => {
     const pagar = monthTxs.filter(t => t.tipo === 'pagar' || t.type === 'debit').reduce((acc, t) => acc + t.valor, 0);
     const receber = monthTxs.filter(t => t.tipo === 'receber' || t.type === 'credit').reduce((acc, t) => acc + t.valor, 0);
     
-    // Saldo acumulado (aproximado dos meses do ano atual)
     const year = currentMonth.substring(0, 4);
     const yearTxs = entries.filter(t => t.competenceMonth.startsWith(year) && t.status === 'previsto');
     const yearAcc = yearTxs.reduce((acc, t) => {
@@ -88,7 +86,7 @@ const Provision: React.FC = () => {
     return entries
       .filter(t => t.competenceMonth === currentMonth && t.status === 'previsto')
       .filter(t => viewMode === 'pagar' ? (t.tipo === 'pagar' || t.type === 'debit') : (t.tipo === 'receber' || t.type === 'credit'))
-      .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+      .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
   }, [entries, currentMonth, viewMode]);
 
   const handleOpenCreate = () => {
@@ -100,7 +98,7 @@ const Provision: React.FC = () => {
       vencimento: currentMonth + '-10',
       recorrente: false,
       recurrenceMode: 'none',
-      categoryGroup: 'Outros',
+      categoryGroup: 'Habitação',
       valor: 0,
       descricao: ''
     });
@@ -115,11 +113,27 @@ const Provision: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.accountId || !formData.categoryGroup) {
-      notifyInfo("Selecione conta e categoria.");
-      return;
+    
+    // Validações Básicas
+    if (!formData.descricao?.trim()) { notifyInfo("A descrição é obrigatória."); return; }
+    if (!formData.valor || parseNumericValue(formData.valor) <= 0) { notifyInfo("O valor deve ser maior que zero."); return; }
+    if (!formData.accountId) { notifyInfo("Selecione uma conta para o lançamento."); return; }
+    if (!formData.categoryGroup) { notifyInfo("Selecione uma categoria."); return; }
+
+    // Validações de Recorrência
+    if (formData.recorrente) {
+      if (!formData.recurrenceMode || formData.recurrenceMode === 'none') {
+        notifyInfo("Selecione o modo da recorrência."); return;
+      }
+      if (formData.recurrenceMode === 'count' && (!formData.recurrenceCount || formData.recurrenceCount < 2)) {
+        notifyInfo("Para recorrência, informe ao menos 2 vezes."); return;
+      }
+      if (formData.recurrenceMode === 'until' && !formData.recurrenceEndMonth) {
+        notifyInfo("Informe o mês final da recorrência."); return;
+      }
     }
 
+    // Se estiver editando um recorrente antigo, abre modal de escopo
     if (editingItem && editingItem.recorrente) {
       setScopeTarget('update');
       setShowScopeModal(true);
@@ -128,11 +142,21 @@ const Provision: React.FC = () => {
 
     setIsSaving(true);
     try {
+      const payload = { ...formData };
+      
+      // Sanitização de segurança se NÃO for recorrente
+      if (!payload.recorrente) {
+        payload.recurrenceMode = 'none';
+        payload.recurrenceEndMonth = undefined;
+        payload.recurrenceCount = undefined;
+        payload.recurrenceGroupId = undefined;
+      }
+
       if (editingItem) {
-        await updateAccountPlanSeries(editingItem, formData, 'current');
+        await updateAccountPlanSeries(editingItem, payload, 'current');
         notifySuccess("Atualizado!");
       } else {
-        await addAccountPlanEntry({ ...formData, userId: user!.uid });
+        await addAccountPlanEntry({ ...payload, userId: user!.uid });
         notifySuccess("Lançamento criado!");
       }
       setShowModal(false);
@@ -147,8 +171,16 @@ const Provision: React.FC = () => {
   const confirmScopeAction = async (scope: RecurrenceScope) => {
     setIsSaving(true);
     try {
+      const payload = { ...formData };
+      if (!payload.recorrente) {
+        payload.recurrenceMode = 'none';
+        payload.recurrenceEndMonth = undefined;
+        payload.recurrenceCount = undefined;
+        payload.recurrenceGroupId = undefined;
+      }
+
       if (scopeTarget === 'update') {
-        await updateAccountPlanSeries(editingItem!, formData, scope);
+        await updateAccountPlanSeries(editingItem!, payload, scope);
         notifySuccess("Série atualizada!");
       } else {
         await deleteAccountPlanSeries(editingItem!, scope);
@@ -239,7 +271,7 @@ const Provision: React.FC = () => {
               <div>
                 <h4 className="font-black text-gray-800 text-sm uppercase leading-none flex items-center gap-2">
                   {item.descricao}
-                  {item.recorrente && <Repeat size={12} className="text-blue-400"/>}
+                  {(item.recorrente || item.isRecurring) && <Repeat size={12} className="text-blue-400"/>}
                 </h4>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{item.categoryGroup}</span>
@@ -250,7 +282,7 @@ const Provision: React.FC = () => {
             </div>
             <div className="text-right">
               <p className={`text-lg font-black tracking-tighter ${viewMode === 'receber' ? 'text-emerald-600' : 'text-red-500'}`}>{formatCurrency(item.valor)}</p>
-              <span className="text-[8px] font-black text-gray-300 uppercase">venc. {item.vencimento.split('-')[2]}</span>
+              <span className="text-[8px] font-black text-gray-300 uppercase">venc. {item.vencimento?.split('-')[2] || '--'}</span>
             </div>
           </div>
         ))}

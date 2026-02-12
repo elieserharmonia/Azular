@@ -55,7 +55,7 @@ export const normalizeTransaction = (t: any): Transaction => {
     accountId: t.accountId || '',
     recorrente: !!(t.recorrente || t.isRecurring),
     isRecurring: !!(t.isRecurring || t.recorrente),
-    recurrenceGroupId: t.recurrenceGroupId || undefined,
+    recurrenceGroupId: (t.recorrente || t.isRecurring) ? t.recurrenceGroupId : undefined,
     isFixed: !!t.isFixed,
     updatedAt: t.updatedAt || new Date().toISOString()
   };
@@ -83,12 +83,21 @@ export const getEntries = async (userId: string): Promise<Transaction[]> => {
 export const addAccountPlanEntry = async (data: Partial<Transaction>) => {
   try {
     const entries: Partial<Transaction>[] = [];
-    const recurrenceGroupId = data.recorrente ? `rg-${Math.random().toString(36).substr(2, 9)}` : undefined;
+    const isRec = !!data.recorrente;
+    const recurrenceGroupId = isRec ? `rg-${Math.random().toString(36).substr(2, 9)}` : undefined;
     
+    // Sanitização de recorrência para evitar dados órfãos
     const baseEntry = {
       ...data,
-      recurrenceGroupId,
-      isRecurring: data.recorrente,
+      valor: parseNumericValue(data.valor),
+      amount: parseNumericValue(data.valor),
+      plannedAmount: parseNumericValue(data.valor),
+      recurrenceGroupId: isRec ? recurrenceGroupId : undefined,
+      isRecurring: isRec,
+      recorrente: isRec,
+      recurrenceMode: isRec ? data.recurrenceMode : 'none',
+      recurrenceEndMonth: isRec ? data.recurrenceEndMonth : undefined,
+      recurrenceCount: isRec ? data.recurrenceCount : undefined,
       status: 'previsto' as TransactionStatus,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -96,7 +105,7 @@ export const addAccountPlanEntry = async (data: Partial<Transaction>) => {
 
     entries.push(baseEntry);
 
-    if (data.recorrente) {
+    if (isRec) {
       let monthsToCreate = 0;
       if (data.recurrenceMode === 'count') {
         monthsToCreate = (data.recurrenceCount || 1) - 1;
@@ -108,7 +117,7 @@ export const addAccountPlanEntry = async (data: Partial<Transaction>) => {
         monthsToCreate = RECURRENCE_WINDOW - 1;
       }
 
-      for (let i = 1; i <= monthsToCreate; i++) {
+      for (let i = 1; i <= Math.max(0, monthsToCreate); i++) {
         const nextMonth = addMonthsToMonthKey(data.competenceMonth!, i);
         const nextVencimento = data.vencimento ? addMonthsToDateString(data.vencimento, i) : '';
         entries.push({
