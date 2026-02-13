@@ -1,48 +1,39 @@
 
-
 export type TransactionType = 'pagar' | 'receber' | 'credit' | 'debit';
 export type TransactionStatus = 'previsto' | 'pago' | 'recebido' | 'atrasado' | 'cancelado' | 'planned' | 'done';
-
-export interface RecurrenceConfig {
-  frequencia: 'semanal' | 'quinzenal' | 'mensal' | 'anual';
-  intervalo: number;
-  inicio: string; // YYYY-MM-DD
-  fim?: string | null;
-}
 
 export interface Transaction {
   id?: string;
   userId: string;
   perfilId?: string; 
   tipo: TransactionType;
-  type?: TransactionType; // Alias
+  type?: TransactionType; 
   descricao: string;
-  description?: string; // Alias
+  description?: string; 
   valor: number;
-  amount?: number; // Alias
-  plannedAmount?: number; // Alias
-  vencimento: string; // YYYY-MM-DD
-  dueDate?: string; // Alias
-  receiveDate?: string; // Added to fix missing property errors in Transactions.tsx and Reports.tsx
-  competenceMonth: string; // YYYY-MM
+  amount?: number; 
+  plannedAmount?: number; 
+  vencimento: string; 
+  dueDate?: string; 
+  receiveDate?: string; 
+  competenceMonth: string; 
   status: TransactionStatus;
   
   // Categorização
-  categoryGroup: string; // Grupo fixo (Habitação, Alimentação, etc)
-  categoriaId?: string; // Categoria detalhada (opcional)
-  categoryId?: string; // Alias
+  categoryGroup: string; 
+  categoriaId?: string; 
+  categoryId?: string; 
+  subcategoryId?: string; // Novo: Suporte a subcategorias
   accountId: string;
   
   // Recorrência
   recorrente: boolean;
   isRecurring?: boolean;
-  // Fix: Added isFixed property to resolve missing property errors in Transactions.tsx and Provision.tsx
   isFixed?: boolean;
   recurrenceGroupId?: string;
   recurrenceMode?: 'none' | 'until' | 'count';
   recurrenceEndMonth?: string;
   recurrenceCount?: number;
-  // Added recurrence property to fix type error in Transactions.tsx where it is handled dynamically
   recurrence?: any;
 
   notas?: string;
@@ -55,7 +46,21 @@ export interface Category {
   userId: string;
   name: string;
   direction: 'credit' | 'debit' | 'both';
+  iconKey: string;     // Ex: 'home', 'shopping-cart'
+  colorKey: string;    // Ex: 'emerald', 'blue'
+  sortOrder: number;
+  isSystem: boolean;   // Define se é uma categoria padrão
   createdAt: any;
+  updatedAt?: any;
+}
+
+export interface Subcategory {
+  id: string;
+  categoryId: string;
+  userId: string;
+  name: string;
+  sortOrder: number;
+  isSystem: boolean;
 }
 
 export interface Account {
@@ -66,8 +71,6 @@ export interface Account {
   active: boolean;
   kind: 'checking' | 'savings' | 'investment';
   createdAt?: any;
-  
-  // Added properties to fix missing property errors in Accounts.tsx and localDbClient.ts
   hasCreditCard?: boolean;
   creditLimit?: number;
   closingDay?: number;
@@ -80,8 +83,6 @@ export interface UserProfile {
   uid: string;
   displayName: string | null;
   currency: string;
-  
-  // Added properties to fix missing property errors in Profile.tsx and AdminUsers.tsx
   fullName?: string;
   phone?: string;
   birthDate?: string;
@@ -104,8 +105,6 @@ export interface Goal {
   targetDate: string;
   priority: number;
   createdAt: any;
-  
-  // Added property to fix missing property error in Goals.tsx
   description?: string;
 }
 

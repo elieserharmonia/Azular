@@ -17,6 +17,7 @@ import { useToast } from '../context/ToastContext.tsx';
 import { 
   ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, ArrowUpCircle, ArrowDownCircle, Calendar, LayoutGrid, List as ListIcon, Info
 } from 'lucide-react';
+import CategorySelect from '../components/CategorySelect.tsx';
 
 const Provision: React.FC = () => {
   const { user } = useAuth();
@@ -43,6 +44,7 @@ const Provision: React.FC = () => {
     recorrente: false,
     recurrenceMode: 'none',
     categoryId: '',
+    subcategoryId: '',
     valor: 0,
     descricao: ''
   });
@@ -92,11 +94,6 @@ const Provision: React.FC = () => {
       .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
   }, [entries, currentMonth, viewMode]);
 
-  const filteredCategories = useMemo(() => {
-    const dir = formData.tipo === 'receber' ? 'credit' : 'debit';
-    return categories.filter(c => c.direction === 'both' || c.direction === dir);
-  }, [categories, formData.tipo]);
-
   const handleOpenCreate = () => {
     setEditingItem(null);
     setFormData({
@@ -107,6 +104,7 @@ const Provision: React.FC = () => {
       recorrente: false,
       recurrenceMode: 'none',
       categoryId: '',
+      subcategoryId: '',
       valor: 0,
       descricao: ''
     });
@@ -163,6 +161,7 @@ const Provision: React.FC = () => {
         competenceMonth: formData.competenceMonth,
         accountId: formData.accountId,
         categoryId: formData.categoryId,
+        subcategoryId: formData.subcategoryId || null,
         categoryGroup: selectedCat?.name || 'Outros',
         recorrente: isRec,
         isRecurring: isRec,
@@ -214,6 +213,7 @@ const Provision: React.FC = () => {
         competenceMonth: formData.competenceMonth,
         accountId: formData.accountId,
         categoryId: formData.categoryId,
+        subcategoryId: formData.subcategoryId || null,
         categoryGroup: selectedCat?.name || 'Outros',
         updatedAt: new Date().toISOString()
       };
@@ -388,13 +388,13 @@ const Provision: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Categoria</label>
-                  <select required value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full font-black border-b-2 border-blue-50 pb-2 bg-transparent text-sm">
-                    <option value="">Selecione...</option>
-                    {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+                <CategorySelect 
+                  userId={user!.uid} 
+                  categoryId={formData.categoryId || ''} 
+                  subcategoryId={formData.subcategoryId}
+                  direction={formData.tipo as any}
+                  onChange={(catId, subId) => setFormData({...formData, categoryId: catId, subcategoryId: subId})}
+                />
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Conta / Carteira</label>
                   <select required value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})} className="w-full font-black border-b-2 border-blue-50 pb-2 bg-transparent text-sm">

@@ -1,5 +1,53 @@
-import { getDb } from './firestoreClient';
-import { Transaction, Account, Category, Goal, Debt } from '../types';
+
+// Fix: Use getFirebaseApp instead of non-existent app export
+import { getFirebaseApp, firebaseEnabled } from "../lib/firebase";
+
+let dbInstance: any = null;
+
+/**
+ * Retorna a instância do DB apenas se o Firebase estiver habilitado.
+ * Implementa padrão Singleton para evitar erros de inicialização múltipla.
+ */
+export async function getDb() {
+  // Fix: Obtain the app instance asynchronously to ensure it is initialized before use
+  const app = await getFirebaseApp();
+  
+  if (!firebaseEnabled || !app) {
+    throw new Error("FIRESTORE_DISABLED_IN_PREVIEW");
+  }
+
+  if (dbInstance) return dbInstance;
+
+  try {
+    const { 
+      getFirestore, 
+      initializeFirestore, 
+      persistentLocalCache, 
+      persistentMultipleTabManager 
+    } = (await import("firebase/firestore")) as any;
+    
+    try {
+      // Tenta inicializar com cache persistente (ideal para PWA)
+      dbInstance = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      });
+    } catch (e: any) {
+      // Se já houver uma instância (mesmo que com outras opções), recupera a existente
+      if (e.code === 'failed-precondition' || e.message?.includes('already been called')) {
+        dbInstance = getFirestore(app);
+      } else {
+        throw e;
+      }
+    }
+
+    return dbInstance;
+  } catch (e) {
+    console.warn("Falha ao inicializar Firestore:", e);
+    throw e;
+  }
+}
 
 export const firestoreDbClient = {
   getAccounts: async (userId: string): Promise<Account[]> => {
@@ -36,7 +84,7 @@ export const firestoreDbClient = {
     const db = await getDb();
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'categories'), where('userId', '==', userId));
-    const snap = await getDocs(snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category)));
+    const snap = await getDocs(q);
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category));
   },
 

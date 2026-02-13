@@ -1,3 +1,4 @@
+
 // services/db.ts
 import { dbClient } from './dbClient';
 import { Transaction, TransactionStatus } from '../types';
@@ -208,6 +209,7 @@ export {
   updateAccount,
   deleteAccount,
   getCategories,
+  getSubcategories,
   createCategory,
   saveUserProfile,
   wipeUserData

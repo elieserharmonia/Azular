@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { useLocation } from 'react-router-dom';
@@ -15,7 +14,6 @@ const INITIAL_FORM_STATE = (): Partial<Transaction> => {
   const today = getTodayDate();
   return {
     type: 'debit',
-    // costType removed as it does not exist in Transaction type
     description: '',
     plannedAmount: 0,
     amount: 0,
@@ -23,7 +21,6 @@ const INITIAL_FORM_STATE = (): Partial<Transaction> => {
     competenceMonth: getCurrentMonth(),
     dueDate: today,
     isFixed: false,
-    // Recurrence is handled dynamically, casting to any to bypass strict checks if interface is not fully aligned
     recurrence: { 
       enabled: false, 
       frequency: 'monthly',
@@ -99,6 +96,8 @@ const Transactions: React.FC = () => {
       setFormData(prev => ({
         ...prev,
         categoriaId: match.categoriaId,
+        categoryId: match.categoryId,
+        subcategoryId: match.subcategoryId,
         accountId: match.accountId,
         amount: prev.amount === 0 ? parseNumericValue(match.plannedAmount || match.amount) : prev.amount
       }));
@@ -107,7 +106,7 @@ const Transactions: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !formData.accountId || !formData.categoriaId) {
+    if (!user || !formData.accountId || !formData.categoryId) {
       notifyInfo("Complete os campos obrigatórios.");
       return;
     }
@@ -229,12 +228,21 @@ const Transactions: React.FC = () => {
                 <input required type="date" className="w-full text-xl font-black border-b-4 border-blue-50 pb-2 outline-none" value={(formData.type === 'credit' ? formData.receiveDate : formData.dueDate) || ''} onChange={e => setFormData({...formData, [formData.type === 'credit' ? 'receiveDate' : 'dueDate']: e.target.value, competenceMonth: e.target.value.substring(0, 7)})} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
-                  <option value="">Conta</option>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-                <CategorySelect userId={user!.uid} value={formData.categoriaId || ''} direction={formData.type as any || 'debit'} onChange={(id) => setFormData({...formData, categoriaId: id})} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 block mb-2 tracking-widest">Conta</label>
+                  <select required className="w-full font-black border-b-4 border-blue-50 pb-2 bg-transparent outline-none" value={formData.accountId || ''} onChange={e => setFormData({...formData, accountId: e.target.value})}>
+                    <option value="">Selecione...</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <CategorySelect 
+                  userId={user!.uid} 
+                  categoryId={formData.categoryId || ''} 
+                  subcategoryId={formData.subcategoryId}
+                  direction={formData.type as any || 'debit'} 
+                  onChange={(cid, sid) => setFormData({...formData, categoryId: cid, subcategoryId: sid})} 
+                />
               </div>
 
               <button disabled={isProcessing} type="submit" className="w-full bg-emerald-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">

@@ -1,79 +1,89 @@
 
-import { firebaseEnabled, getFirebaseApp } from '../lib/firebase';
+import { firebaseEnabled } from '../lib/firebase';
 import { dbClient } from './dbClient';
-import { Category } from '../types';
-import { DEFAULT_CATEGORIES } from '../constants';
+import { Category, Subcategory } from '../types';
+import { OFFICIAL_SEEDS } from '../constants';
 
-function isPlainObject(v: any) {
-  return v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date);
+function normalizeName(name: string) {
+  return name.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 /**
- * Remove undefined, troca NaN por null, e normaliza strings vazias.
- * (Firestore odeia undefined / NaN)
+ * Garante que o usuário tenha as categorias padrão do sistema.
  */
-export function sanitizeForFirestore<T extends Record<string, any>>(input: T): T {
-  const out: any = Array.isArray(input) ? [] : {};
+export const seedCategoriesIfEmpty = async (userId: string) => {
+  const existing = await dbClient.getCategories(userId);
+  const existingNames = new Set(existing.map(c => normalizeName(c.name)));
 
-  for (const [k, v] of Object.entries(input)) {
-    if (v === undefined) continue;
+  const categoriesToCreate = OFFICIAL_SEEDS.filter(s => !existingNames.has(normalizeName(s.name)));
 
-    if (typeof v === "number" && Number.isNaN(v)) {
-      out[k] = null;
-      continue;
+  if (categoriesToCreate.length === 0) return;
+
+  for (const seed of categoriesToCreate) {
+    const categoryData = {
+      userId,
+      name: seed.name,
+      direction: seed.direction as any,
+      iconKey: seed.iconKey,
+      colorKey: seed.colorKey,
+      isSystem: true,
+      sortOrder: seed.name === 'Outros' ? 999 : 0,
+      createdAt: new Date().toISOString()
+    };
+    
+    const catId = await dbClient.createCategory(userId, categoryData.name, categoryData.direction);
+    
+    // Se houver subcategorias no seed, e o dbClient suportar (ou via Firestore direto)
+    if (seed.subcategories.length > 0 && firebaseEnabled) {
+      const { getDb } = await import('./firestoreClient');
+      const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
+      const db = await getDb();
+      
+      for (const subName of seed.subcategories) {
+        await addDoc(collection(db, 'subcategories'), {
+          categoryId: catId,
+          userId,
+          name: subName,
+          isSystem: true,
+          sortOrder: 0,
+          createdAt: serverTimestamp()
+        });
+      }
     }
-
-    if (typeof v === "string" && v.trim() === "") {
-      out[k] = null;
-      continue;
-    }
-
-    if (Array.isArray(v)) {
-      out[k] = v.map((x) => (isPlainObject(x) ? sanitizeForFirestore(x) : x));
-      continue;
-    }
-
-    if (isPlainObject(v)) {
-      out[k] = sanitizeForFirestore(v);
-      continue;
-    }
-
-    out[k] = v;
   }
-
-  return out;
-}
+};
 
 export const getAccounts = (userId: string) => dbClient.getAccounts(userId);
 export const addAccount = (data: any) => dbClient.addAccount(data);
 export const updateAccount = (id: string, data: any) => dbClient.updateAccount(id, data);
 export const deleteAccount = (id: string) => dbClient.deleteAccount(id);
 
-/**
- * Retorna categorias do usuário misturadas com as padrões caso não existam.
- */
 export const getCategories = async (userId: string): Promise<Category[]> => {
   const userCats = await dbClient.getCategories(userId);
   
-  // Garantir sementes se necessário (no Firestore isso geralmente é feito no signup)
-  if (userCats.length === 0 && firebaseEnabled) {
-    // Para simplificar, o localDbClient já trata sementes.
-    // No Firestore, retornamos os padrões se o usuário não tiver nada.
-    return DEFAULT_CATEGORIES.map((c, i) => ({
-      ...c,
-      id: `default-${i}`,
-      userId,
-      direction: c.direction as any,
-      createdAt: new Date().toISOString()
-    }));
+  if (userCats.length === 0) {
+    await seedCategoriesIfEmpty(userId);
+    return getCategories(userId);
   }
 
-  // Ordenação: Alfabética, com "Outros" por último
   return userCats.sort((a, b) => {
     if (a.name === 'Outros') return 1;
     if (b.name === 'Outros') return -1;
     return a.name.localeCompare(b.name);
   });
+};
+
+export const getSubcategories = async (userId: string, categoryId: string): Promise<Subcategory[]> => {
+  if (!firebaseEnabled) return []; // Mock local se necessário
+  
+  const { getDb } = await import('./firestoreClient');
+  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+  const db = await getDb();
+  
+  const q = query(collection(db, 'subcategories'), where('categoryId', '==', categoryId));
+  const snap = await getDocs(q);
+  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Subcategory))
+    .sort((a: any, b: any) => a.name.localeCompare(b.name));
 };
 
 export const createCategory = (userId: string, name: string, direction: any) => 
