@@ -1,6 +1,8 @@
 
 // Fix: Use getFirebaseApp instead of non-existent app export
 import { getFirebaseApp, firebaseEnabled } from "../lib/firebase";
+// Fix: Added missing imports for the types used in this file
+import { Account, Category, Transaction, Debt, Goal } from '../types';
 
 let dbInstance: any = null;
 
@@ -55,6 +57,7 @@ export const firestoreDbClient = {
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'accounts'), where('userId', '==', userId));
     const snap = await getDocs(q);
+    // Fix: Explicitly using the Account type for casting
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Account));
   },
 
@@ -85,10 +88,11 @@ export const firestoreDbClient = {
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'categories'), where('userId', '==', userId));
     const snap = await getDocs(q);
+    // Fix: Explicitly using the Category type for casting
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category));
   },
 
-  // Fix: Rename from addCategory to createCategory to ensure consistent API across all dbClient implementations
+  // Fix: createCategory implementation to ensure consistency with Category types
   createCategory: async (userId: string, name: string, direction: any) => {
     const db = await getDb();
     const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
@@ -103,6 +107,7 @@ export const firestoreDbClient = {
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'transactions'), where('userId', '==', userId));
     const snap = await getDocs(q);
+    // Fix: Explicitly using the Transaction type for casting
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Transaction));
   },
 
@@ -133,6 +138,7 @@ export const firestoreDbClient = {
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'debts'), where('userId', '==', userId));
     const snap = await getDocs(q);
+    // Fix: Explicitly using the Debt type for casting
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Debt));
   },
 
@@ -141,6 +147,7 @@ export const firestoreDbClient = {
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'goals'), where('userId', '==', userId));
     const snap = await getDocs(q);
+    // Fix: Explicitly using the Goal type for casting
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Goal));
   }
 };

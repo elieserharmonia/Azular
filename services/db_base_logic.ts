@@ -4,52 +4,54 @@ import { dbClient } from './dbClient';
 import { Category, Subcategory } from '../types';
 import { OFFICIAL_SEEDS } from '../constants';
 
-function normalizeName(name: string) {
-  return name.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+/**
+ * Utilitário para normalizar nomes e evitar duplicatas (acentos, espaços, cases)
+ */
+export function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 /**
- * Garante que o usuário tenha as categorias padrão do sistema.
+ * Garante que o usuário tenha as categorias padrão do sistema sem duplicar existentes.
  */
 export const seedCategoriesIfEmpty = async (userId: string) => {
-  const existing = await dbClient.getCategories(userId);
-  const existingNames = new Set(existing.map(c => normalizeName(c.name)));
+  try {
+    const existing = await dbClient.getCategories(userId);
+    const existingNormalized = new Set(existing.map(c => normalizeName(c.name)));
 
-  const categoriesToCreate = OFFICIAL_SEEDS.filter(s => !existingNames.has(normalizeName(s.name)));
+    console.log(`[Seed] Verificando sementes para ${userId}. Já possui ${existing.length} categorias.`);
 
-  if (categoriesToCreate.length === 0) return;
-
-  for (const seed of categoriesToCreate) {
-    const categoryData = {
-      userId,
-      name: seed.name,
-      direction: seed.direction as any,
-      iconKey: seed.iconKey,
-      colorKey: seed.colorKey,
-      isSystem: true,
-      sortOrder: seed.name === 'Outros' ? 999 : 0,
-      createdAt: new Date().toISOString()
-    };
-    
-    const catId = await dbClient.createCategory(userId, categoryData.name, categoryData.direction);
-    
-    // Se houver subcategorias no seed, e o dbClient suportar (ou via Firestore direto)
-    if (seed.subcategories.length > 0 && firebaseEnabled) {
-      const { getDb } = await import('./firestoreClient');
-      const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
-      const db = await getDb();
+    for (const seed of OFFICIAL_SEEDS) {
+      const sNameNorm = normalizeName(seed.name);
       
-      for (const subName of seed.subcategories) {
-        await addDoc(collection(db, 'subcategories'), {
-          categoryId: catId,
-          userId,
-          name: subName,
-          isSystem: true,
-          sortOrder: 0,
-          createdAt: serverTimestamp()
-        });
+      if (!existingNormalized.has(sNameNorm)) {
+        console.log(`[Seed] Inserindo categoria faltante: ${seed.name}`);
+        const catId = await dbClient.createCategory(userId, seed.name, seed.direction as any);
+        
+        // Dados adicionais para Firestore (ícones e cores que o dbClient básico pode não salvar)
+        if (firebaseEnabled && catId) {
+          try {
+            const { getDb } = await import('./firestoreClient');
+            const { doc, updateDoc } = (await import('firebase/firestore')) as any;
+            const db = await getDb();
+            await updateDoc(doc(db, 'categories', catId), {
+              iconKey: seed.iconKey,
+              colorKey: seed.colorKey,
+              isSystem: true,
+              sortOrder: seed.name === 'Outros' ? 999 : 0
+            });
+          } catch (e) {
+            console.warn("[Seed] Falha ao injetar metadados estendidos, mas categoria foi criada.");
+          }
+        }
       }
     }
+  } catch (err) {
+    console.error("[Seed] Erro crítico ao processar sementes:", err);
   }
 };
 
@@ -58,32 +60,49 @@ export const addAccount = (data: any) => dbClient.addAccount(data);
 export const updateAccount = (id: string, data: any) => dbClient.updateAccount(id, data);
 export const deleteAccount = (id: string) => dbClient.deleteAccount(id);
 
+/**
+ * Retorna categorias com logs de diagnóstico e ordenação garantida.
+ */
 export const getCategories = async (userId: string): Promise<Category[]> => {
-  const userCats = await dbClient.getCategories(userId);
-  
-  if (userCats.length === 0) {
-    await seedCategoriesIfEmpty(userId);
-    return getCategories(userId);
-  }
+  try {
+    let userCats = await dbClient.getCategories(userId);
+    
+    console.log(`[DB] getCategories: ${userCats.length} encontradas para ${userId}`);
 
-  return userCats.sort((a, b) => {
-    if (a.name === 'Outros') return 1;
-    if (b.name === 'Outros') return -1;
-    return a.name.localeCompare(b.name);
-  });
+    if (userCats.length === 0) {
+      console.log("[DB] Nenhuma categoria. Rodando sementes...");
+      await seedCategoriesIfEmpty(userId);
+      userCats = await dbClient.getCategories(userId);
+    }
+
+    // Ordenação Alfabética + Outros por último
+    return userCats.sort((a, b) => {
+      if (a.name.toLowerCase() === 'outros') return 1;
+      if (b.name.toLowerCase() === 'outros') return -1;
+      return a.name.localeCompare(b.name, 'pt-BR');
+    });
+  } catch (err) {
+    console.error("[DB] Falha ao carregar categorias:", err);
+    return [];
+  }
 };
 
 export const getSubcategories = async (userId: string, categoryId: string): Promise<Subcategory[]> => {
-  if (!firebaseEnabled) return []; // Mock local se necessário
+  if (!firebaseEnabled) return [];
   
-  const { getDb } = await import('./firestoreClient');
-  const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
-  const db = await getDb();
-  
-  const q = query(collection(db, 'subcategories'), where('categoryId', '==', categoryId));
-  const snap = await getDocs(q);
-  return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Subcategory))
-    .sort((a: any, b: any) => a.name.localeCompare(b.name));
+  try {
+    const { getDb } = await import('./firestoreClient');
+    const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
+    const db = await getDb();
+    
+    const q = query(collection(db, 'subcategories'), where('categoryId', '==', categoryId));
+    const snap = await getDocs(q);
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Subcategory))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
+  } catch (err) {
+    console.error("[DB] Falha ao carregar subcategorias:", err);
+    return [];
+  }
 };
 
 export const createCategory = (userId: string, name: string, direction: any) => 
@@ -115,6 +134,6 @@ export const wipeUserData = async (userId: string) => {
   
   return { 
     deletedCount: 0, 
-    message: "Limpeza completa não suportada diretamente via Client SDK para Firestore." 
+    message: "Limpeza completa não suportada via Client SDK." 
   };
 };

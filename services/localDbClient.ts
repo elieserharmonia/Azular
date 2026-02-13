@@ -55,12 +55,15 @@ export const localDbClient = {
   getCategories: async (userId: string): Promise<Category[]> => {
     const cats = getLS<Category[]>('categories', []);
     if (cats.length === 0) {
+      // Fix: Add missing properties sortOrder and isSystem to Category objects to match the interface
       const initial: Category[] = DEFAULT_CATEGORIES.map((c, i) => ({ 
         ...c, 
         direction: c.direction as 'credit' | 'debit' | 'both',
         id: `cat-demo-${i}`, 
         userId, 
-        createdAt: new Date().toISOString() 
+        createdAt: new Date().toISOString(),
+        sortOrder: i,
+        isSystem: true
       }));
       setLS('categories', initial);
       return initial;

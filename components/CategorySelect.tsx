@@ -61,10 +61,13 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
     if (!userId) return;
     setLoading(true);
     try {
+      console.log(`[CategorySelect] Carregando categorias para direction: ${direction}`);
       const data = await getCategories(userId);
+      console.log(`[CategorySelect] ${data.length} categorias carregadas. Primeiras 5:`, data.slice(0, 5).map(c => c.name));
       setCategories(data);
     } catch (err) {
-      console.error(err);
+      console.error("[CategorySelect] Erro no load:", err);
+      notifyError("Erro ao carregar categorias.");
     } finally {
       setLoading(false);
     }
@@ -72,7 +75,6 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
 
   useEffect(() => { load(); }, [userId]);
 
-  // Carrega subcategorias quando a categoria muda
   useEffect(() => {
     if (categoryId) {
       getSubcategories(userId, categoryId).then(setSubcategories);
@@ -82,24 +84,25 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
   }, [categoryId, userId]);
 
   const filteredCategories = useMemo(() => {
-    const dirFiltered = categories.filter(c => 
-      direction === 'both' || c.direction === 'both' || c.direction === direction
-    );
+    // Normalização interna para o filtro de busca
+    const normSearch = searchTerm.toLowerCase().trim();
     
-    if (!searchTerm.trim()) return dirFiltered;
-    
-    return dirFiltered.filter(c => 
-      c.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filtered = categories.filter(c => {
+      // Regra de direção: 
+      // Se pedimos débito, mostramos débito e flexível (both)
+      // Se pedimos crédito, mostramos crédito e flexível (both)
+      const matchesDirection = direction === 'both' || c.direction === 'both' || c.direction === direction;
+      const matchesSearch = !normSearch || c.name.toLowerCase().includes(normSearch);
+      return matchesDirection && matchesSearch;
+    });
+
+    console.log(`[CategorySelect] Direção solicitada: ${direction} | Itens após filtro: ${filtered.length}`);
+    return filtered;
   }, [categories, direction, searchTerm]);
 
   const selectedCategory = useMemo(() => 
     categories.find(c => c.id === categoryId), 
   [categories, categoryId]);
-
-  const selectedSubcategory = useMemo(() => 
-    subcategories.find(s => s.id === subcategoryId), 
-  [subcategories, subcategoryId]);
 
   const handleSelectCategory = (cat: Category) => {
     onChange(cat.id!, undefined);
@@ -108,32 +111,44 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
   };
 
   const handleCreateNew = async (e: React.FormEvent) => {
+    // CRITICAL: Prevent form submission bubbling up to the main form
     e.preventDefault();
+    e.stopPropagation();
+
     if (!newCatName.trim() || isCreating) return;
     
     setIsCreating(true);
     try {
+      console.log(`[CategorySelect] Criando nova categoria: ${newCatName}`);
       const newId = await createCategory(userId, newCatName.trim(), direction);
+      
       notifySuccess("Categoria criada!");
-      await load();
+      
+      // Recarrega a lista sem fechar o fluxo
+      const updatedData = await getCategories(userId);
+      setCategories(updatedData);
+      
+      // Seleciona a nova e limpa input
       onChange(newId, undefined);
-      setIsCreating(false);
       setNewCatName('');
+      setIsCreating(false);
+      
+      // Fecha apenas o modal de seleção, mantendo o usuário no formulário principal
       setShowMainModal(false);
     } catch (err) {
-      notifyError("Erro ao criar.");
+      console.error("[CategorySelect] Erro ao criar categoria:", err);
+      notifyError("Erro ao criar categoria.");
       setIsCreating(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      {/* Botão de Trigger Principal */}
       <div className="space-y-1">
         <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Categoria</label>
         <button 
           type="button"
-          onClick={() => setShowMainModal(true)}
+          onClick={(e) => { e.preventDefault(); setShowMainModal(true); }}
           className={`w-full flex items-center justify-between p-4 bg-white border-2 rounded-2xl transition-all ${
             error ? 'border-red-200' : 'border-blue-50 hover:border-blue-200'
           }`}
@@ -141,13 +156,13 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
           <div className="flex items-center gap-3">
             {selectedCategory ? (
               <>
-                <div className={`p-2 rounded-xl ${COLOR_MAP[selectedCategory.colorKey] || 'bg-gray-100'}`}>
+                <div className={`p-2 rounded-xl ${COLOR_MAP[selectedCategory.colorKey] || 'bg-slate-50 text-slate-600'}`}>
                   {IconMap[selectedCategory.iconKey] || <Tag size={18} />}
                 </div>
                 <span className="font-black text-gray-800 uppercase text-sm">{selectedCategory.name}</span>
               </>
             ) : (
-              <span className="text-gray-300 font-bold uppercase text-xs">Selecione uma categoria...</span>
+              <span className="text-gray-300 font-bold uppercase text-xs">Escolha uma categoria...</span>
             )}
           </div>
           <ChevronRight size={18} className="text-gray-300" />
@@ -155,7 +170,6 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
         {error && <span className="text-[9px] font-bold text-red-500 uppercase">{error}</span>}
       </div>
 
-      {/* Select de Subcategoria (Opcional - aparece se houver dados) */}
       {subcategories.length > 0 && (
         <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
           <label className="text-[10px] font-black uppercase text-gray-400 block tracking-widest">Subcategoria (Opcional)</label>
@@ -164,7 +178,7 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
             onChange={(e) => onChange(categoryId, e.target.value)}
             className="w-full font-black border-b-4 border-blue-50 bg-transparent py-2 outline-none focus:border-blue-600 text-sm"
           >
-            <option value="">Geral / Outros</option>
+            <option value="">Geral</option>
             {subcategories.map(sub => (
               <option key={sub.id} value={sub.id}>{sub.name}</option>
             ))}
@@ -172,14 +186,16 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
         </div>
       )}
 
-      {/* Modal de Busca e Seleção */}
       {showMainModal && (
-        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[3rem] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in slide-in-from-bottom duration-300">
+        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-md z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowMainModal(false)}>
+          <div 
+            className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[3rem] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-in slide-in-from-bottom duration-300"
+            onClick={e => e.stopPropagation()}
+          >
             
             <div className="p-8 border-b border-gray-100">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black uppercase tracking-tighter">Escolher Categoria</h3>
+                <h3 className="text-xl font-black uppercase tracking-tighter">Categorias</h3>
                 <button type="button" onClick={() => setShowMainModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button>
               </div>
               
@@ -188,7 +204,7 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
                 <input 
                   autoFocus
                   type="text" 
-                  placeholder="Pesquisar..." 
+                  placeholder="Pesquisar categoria..." 
                   className="w-full bg-gray-50 border-2 border-transparent focus:border-blue-100 rounded-2xl py-4 pl-12 pr-4 font-bold text-sm outline-none transition-all"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -204,12 +220,14 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
                   onClick={() => handleSelectCategory(cat)}
                   className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-blue-50 transition-colors text-left group"
                 >
-                  <div className={`p-3 rounded-xl transition-transform group-hover:scale-110 ${COLOR_MAP[cat.colorKey] || 'bg-gray-100'}`}>
+                  <div className={`p-3 rounded-xl transition-transform group-hover:scale-110 ${COLOR_MAP[cat.colorKey] || 'bg-slate-50 text-slate-600'}`}>
                     {IconMap[cat.iconKey] || <Tag size={18} />}
                   </div>
                   <div className="flex-1">
                     <p className="font-black text-gray-800 uppercase text-xs">{cat.name}</p>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{cat.direction === 'both' ? 'Flexível' : cat.direction === 'credit' ? 'Entrada' : 'Saída'}</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
+                      {cat.direction === 'both' ? 'Entrada/Saída' : cat.direction === 'credit' ? 'Entrada' : 'Saída'}
+                    </p>
                   </div>
                   <ChevronRight size={14} className="text-gray-200" />
                 </button>
@@ -218,28 +236,39 @@ const CategorySelect: React.FC<CategorySelectProps> = ({
               {filteredCategories.length === 0 && !loading && (
                 <div className="py-10 text-center space-y-4">
                   <Tag size={40} className="mx-auto text-gray-100" />
-                  <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Nenhuma categoria encontrada</p>
+                  <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Nada encontrado...</p>
+                </div>
+              )}
+              
+              {loading && (
+                <div className="py-20 flex justify-center">
+                  <Loader2 className="animate-spin text-blue-600" />
                 </div>
               )}
             </div>
 
+            {/* BOTÃO FIXO E VISÍVEL DE NOVA CATEGORIA */}
             <div className="p-6 bg-gray-50 border-t border-gray-100">
-              <form onSubmit={handleCreateNew} className="flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="Nova categoria..."
-                  className="flex-1 bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600"
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                />
-                <button 
-                  disabled={!newCatName.trim() || isCreating}
-                  type="submit" 
-                  className="bg-blue-600 text-white p-3 rounded-xl shadow-lg active:scale-90 transition-all disabled:opacity-50"
-                >
-                  {isCreating ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                </button>
-              </form>
+              <div className="flex flex-col gap-2">
+                <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest ml-1">Não encontrou? Crie uma agora:</p>
+                <form onSubmit={handleCreateNew} className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="Nome da nova categoria..."
+                    className="flex-1 bg-white border-2 border-gray-200 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-blue-600"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button 
+                    disabled={!newCatName.trim() || isCreating}
+                    type="submit" 
+                    className="bg-blue-600 text-white p-3 rounded-xl shadow-lg active:scale-90 transition-all disabled:opacity-50"
+                  >
+                    {isCreating ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </div>
