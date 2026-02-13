@@ -1,19 +1,15 @@
-// Fix: Use getFirebaseApp instead of non-existent app export
+
 import { getFirebaseApp, firebaseEnabled } from "../lib/firebase";
+import { getFirestoreModule } from "../lib/firebaseModules";
 
 let dbInstance: any = null;
 
 /**
  * Retorna a instância do DB apenas se o Firebase estiver habilitado.
- * Implementa padrão Singleton para evitar erros de inicialização múltipla.
  */
 export async function getDb() {
-  // Fix: Obtain the app instance asynchronously to ensure it is initialized before use
   const app = await getFirebaseApp();
-  
-  if (!firebaseEnabled || !app) {
-    throw new Error("FIRESTORE_DISABLED_IN_PREVIEW");
-  }
+  if (!firebaseEnabled || !app) throw new Error("FIRESTORE_DISABLED_IN_PREVIEW");
 
   if (dbInstance) return dbInstance;
 
@@ -23,24 +19,21 @@ export async function getDb() {
       initializeFirestore, 
       persistentLocalCache, 
       persistentMultipleTabManager 
-    } = (await import("firebase/firestore")) as any;
+    } = await getFirestoreModule();
     
     try {
-      // Tenta inicializar com cache persistente (ideal para PWA)
       dbInstance = initializeFirestore(app, {
         localCache: persistentLocalCache({
           tabManager: persistentMultipleTabManager(),
         }),
       });
     } catch (e: any) {
-      // Se já houver uma instância (mesmo que com outras opções), recupera a existente
       if (e.code === 'failed-precondition' || e.message?.includes('already been called')) {
         dbInstance = getFirestore(app);
       } else {
         throw e;
       }
     }
-
     return dbInstance;
   } catch (e) {
     console.warn("Falha ao inicializar Firestore:", e);

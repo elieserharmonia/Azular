@@ -8,12 +8,26 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: true, // Útil para debugar tela branca no mobile
+    sourcemap: false, // Desativado em prod para reduzir tempo de build
     target: 'esnext',
     minify: 'terser',
+    rollupOptions: {
+      output: {
+        // Separa bibliotecas grandes para cache mais eficiente no navegador
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor-react';
+            if (id.includes('lucide-react')) return 'vendor-ui';
+            if (id.includes('recharts')) return 'vendor-charts';
+            return 'vendor';
+          }
+        }
+      }
+    },
     terserOptions: {
       compress: {
-        drop_console: false, // Mantemos logs para diagnóstico remoto
+        drop_console: true, // Remove logs de debug no build final
+        drop_debugger: true
       }
     }
   },

@@ -1,19 +1,13 @@
+
 import React, { useState } from 'react';
 import { firebaseEnabled } from '../lib/firebase';
 import { getAuthClient } from '../services/authClient';
 import { getDb } from '../services/firestoreClient';
 import { Link, useNavigate } from 'react-router-dom';
-// Fix: use wildcard import for firestore to resolve exported member errors in problematic environment
-import * as firestore from 'firebase/firestore';
 import { DEFAULT_CATEGORIES } from '../constants';
-import { Eye, EyeOff, AlertCircle } from 'lucide-react';
-// Fix: Use 'isPreview' instead of non-existent 'isAiStudioPreview'
+import { Eye, EyeOff } from 'lucide-react';
 import { isPreview } from '../utils/env';
-
-/**
- * ⚠️ IMPORTANTE: Auth é lazy por causa do Google AI Studio preview.
- * Não mover createUserWithEmailAndPassword para imports de topo.
- */
+import { getAuthModule, getFirestoreModule } from '../lib/firebaseModules';
 
 const Signup: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -23,7 +17,6 @@ const Signup: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  // Fix: Use 'isPreview' from utils/env and rename local variable to 'isPreviewMode'
   const isPreviewMode = isPreview();
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -39,36 +32,34 @@ const Signup: React.FC = () => {
 
     try {
       const auth = await getAuthClient();
-      // FIX: Obtain db instance asynchronously via getDb() to ensure compatibility with preview environments
       const db = await getDb();
-      const { createUserWithEmailAndPassword } = await import('firebase/auth');
+      const { createUserWithEmailAndPassword } = await getAuthModule();
+      const { collection, addDoc, serverTimestamp } = await getFirestoreModule();
       
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
       const userId = userCred.user.uid;
 
-      const fs = firestore as any;
       const catPromises = DEFAULT_CATEGORIES.map(cat => 
-        fs.addDoc(fs.collection(db, 'categories'), {
+        addDoc(collection(db, 'categories'), {
           ...cat,
           userId,
-          createdAt: fs.serverTimestamp()
+          createdAt: serverTimestamp()
         })
       );
       
-      const accPromise = fs.addDoc(fs.collection(db, 'accounts'), {
+      const accPromise = addDoc(collection(db, 'accounts'), {
         userId,
         name: 'Carteira Principal',
         kind: 'individual',
         initialBalance: 0,
         active: true,
-        createdAt: fs.serverTimestamp()
+        createdAt: serverTimestamp()
       });
 
       await Promise.all([...catPromises, accPromise]);
       navigate('/app/dashboard');
     } catch (err: any) {
-      console.error("Signup Error:", err);
-      setError('Erro ao criar conta. Tente novamente mais tarde.');
+      setError('Erro ao criar conta. Tente novamente.');
       setLoading(false);
     }
   };
@@ -96,9 +87,14 @@ const Signup: React.FC = () => {
           </div>
           <div>
             <label className="block text-[10px] font-black text-gray-400 uppercase mb-2">Senha</label>
-            <input required type={showPassword ? "text" : "password"} className="w-full border-b-4 border-gray-100 py-3 text-lg font-black outline-none focus:border-blue-500" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <div className="relative">
+              <input required type={showPassword ? "text" : "password"} className="w-full border-b-4 border-gray-100 py-3 text-lg font-black outline-none focus:border-blue-500" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2">
+                {showPassword ? <EyeOff size={20}/> : <Eye size={20}/>}
+              </button>
+            </div>
           </div>
-          <button disabled={loading} type="submit" className="w-full bg-blue-600 text-white font-black py-5 rounded-[2rem] shadow-xl uppercase tracking-widest">
+          <button disabled={loading} type="submit" className="w-full bg-blue-600 text-white font-black py-5 rounded-[2rem] shadow-xl uppercase tracking-widest active:scale-95 transition-all">
             {loading ? 'Criando...' : 'Começar Agora'}
           </button>
         </form>

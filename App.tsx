@@ -1,18 +1,33 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+
+import React, { createContext, useContext, useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import Dashboard from './pages/Dashboard.tsx';
-import AccountsManager from './pages/AccountsManager.tsx';
-import Provision from './pages/Provision.tsx';
-import Profile from './pages/Profile.tsx';
-import RestartPlan from './pages/RestartPlan.tsx';
-import Login from './pages/Login.tsx';
-import Signup from './pages/Signup.tsx';
 import Layout from './components/Layout.tsx';
 import { UserProfile } from './types.ts';
 import { isPreview } from './utils/env.ts';
 import { getAuthClient } from './services/authClient.ts';
 import { saveUserProfile } from './services/db.ts';
 import { firebaseEnabled } from './lib/firebase.ts';
+import { getAuthModule } from './lib/firebaseModules.ts';
+
+// Loader de tela cheia para transições de rota
+const FullScreenLoader = () => (
+  <div className="flex flex-col items-center justify-center min-h-screen bg-[#F4F7FE] animate-pulse">
+    <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+    <span className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Azulando...</span>
+  </div>
+);
+
+// Páginas com Lazy Loading
+const Dashboard = lazy(() => import('./pages/Dashboard.tsx'));
+const AccountsManager = lazy(() => import('./pages/AccountsManager.tsx'));
+const Provision = lazy(() => import('./pages/Provision.tsx'));
+const Profile = lazy(() => import('./pages/Profile.tsx'));
+const RestartPlan = lazy(() => import('./pages/RestartPlan.tsx'));
+const Login = lazy(() => import('./pages/Login.tsx'));
+const Signup = lazy(() => import('./pages/Signup.tsx'));
+const Analysis = lazy(() => import('./pages/Analysis.tsx'));
+const Categories = lazy(() => import('./pages/Categories.tsx'));
+const Goals = lazy(() => import('./pages/Goals.tsx'));
 
 interface AuthContextType {
   user: any;
@@ -48,8 +63,6 @@ const App = () => {
 
     const initAuth = async () => {
       try {
-        console.log("[Auth] Booting system. isPreviewMode =", isPreviewMode);
-
         if (isPreviewMode) {
           setUser({ uid: 'preview-user', email: 'demo@azular.app' });
           setLoading(false);
@@ -57,38 +70,27 @@ const App = () => {
         }
 
         if (!firebaseEnabled) {
-          console.warn("[Auth] Firebase disabled.");
           setLoading(false);
           return;
         }
 
         const auth = await getAuthClient();
+        const { onAuthStateChanged } = await getAuthModule();
         
-        unsubscribe = auth.onAuthStateChanged(async (u: any) => {
-          try {
-            console.log("[Auth] State changed:", u?.uid || "null");
-            setUser(u);
-            
-            if (u) {
-              const defaultProfile = {
-                uid: u.uid,
-                displayName: u.displayName || 'Usuário',
-                currency: 'BRL',
-                email: u.email
-              };
-              
-              saveUserProfile(u.uid, defaultProfile).catch(e => {
-                console.warn("[Auth] Falha não crítica ao sincronizar perfil:", e);
-              });
-            }
-          } catch (e) {
-            console.error("[Auth] Erro no processamento do usuário logado:", e);
-          } finally {
-            setLoading(false);
+        unsubscribe = onAuthStateChanged(auth, async (u: any) => {
+          setUser(u);
+          if (u) {
+            const defaultProfile = {
+              uid: u.uid,
+              displayName: u.displayName || 'Usuário',
+              currency: 'BRL',
+              email: u.email
+            };
+            saveUserProfile(u.uid, defaultProfile).catch(() => {});
           }
+          setLoading(false);
         });
       } catch (err: any) {
-        console.error("[Auth] Falha fatal no boot do sistema:", err);
         setBootError(err);
         setLoading(false);
       }
@@ -98,34 +100,32 @@ const App = () => {
     return () => unsubscribe();
   }, [isPreviewMode]);
 
-  if (bootError) {
-    throw bootError;
-  }
+  if (bootError) throw bootError;
 
-  const value = {
-    user,
-    userProfile,
-    loading,
-    isPreview: isPreviewMode
-  };
+  const value = { user, userProfile, loading, isPreview: isPreviewMode };
 
   return (
     <AuthContext.Provider value={value}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        
-        <Route path="/app" element={<ProtectedRoute><Layout><Outlet /></Layout></ProtectedRoute>}>
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="contas-plano" element={<Provision />} />
-          <Route path="contas" element={<AccountsManager />} />
-          <Route path="restart-plan" element={<RestartPlan />} />
-          <Route path="profile" element={<Profile />} />
-          <Route index element={<Navigate to="/app/dashboard" />} />
-        </Route>
+      <Suspense fallback={<FullScreenLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          
+          <Route path="/app" element={<ProtectedRoute><Layout><Outlet /></Layout></ProtectedRoute>}>
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="contas-plano" element={<Provision />} />
+            <Route path="contas" element={<AccountsManager />} />
+            <Route path="restart-plan" element={<RestartPlan />} />
+            <Route path="analysis" element={<Analysis />} />
+            <Route path="categories" element={<Categories />} />
+            <Route path="goals" element={<Goals />} />
+            <Route path="profile" element={<Profile />} />
+            <Route index element={<Navigate to="/app/dashboard" />} />
+          </Route>
 
-        <Route path="/" element={<Navigate to="/app/dashboard" />} />
-      </Routes>
+          <Route path="/" element={<Navigate to="/app/dashboard" />} />
+        </Routes>
+      </Suspense>
     </AuthContext.Provider>
   );
 };
