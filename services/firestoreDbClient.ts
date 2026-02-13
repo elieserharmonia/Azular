@@ -36,11 +36,12 @@ export const firestoreDbClient = {
     const db = await getDb();
     const { collection, query, where, getDocs } = (await import('firebase/firestore')) as any;
     const q = query(collection(db, 'categories'), where('userId', '==', userId));
-    const snap = await getDocs(q);
+    const snap = await getDocs(snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category)));
     return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as Category));
   },
 
-  addCategory: async (userId: string, name: string, direction: any) => {
+  // Fix: Rename from addCategory to createCategory to ensure consistent API across all dbClient implementations
+  createCategory: async (userId: string, name: string, direction: any) => {
     const db = await getDb();
     const { collection, addDoc, serverTimestamp } = (await import('firebase/firestore')) as any;
     const docRef = await addDoc(collection(db, 'categories'), { 

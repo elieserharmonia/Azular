@@ -13,6 +13,9 @@ import {
   wipeUserData,
 } from './db_base_logic';
 
+// Fix: Export RecurrenceScope type to resolve missing export error in Provision.tsx
+export type RecurrenceScope = 'current' | 'forward' | 'all' | 'backward';
+
 const RECURRENCE_WINDOW = 12;
 
 function isPlainObject(v: any) {
@@ -141,10 +144,11 @@ export const addAccountPlanEntry = async (data: Partial<Transaction>) => {
   return Promise.all(promises);
 };
 
+// Fix: Update type of scope parameter to use RecurrenceScope and implement 'backward' logic
 export const updateAccountPlanSeries = async (
   currentTx: Transaction,
   updatedFields: Partial<Transaction>,
-  scope: 'current' | 'forward' | 'all'
+  scope: RecurrenceScope
 ) => {
   const txs = await getEntries(currentTx.userId);
   const groupId = currentTx.recurrenceGroupId;
@@ -155,6 +159,7 @@ export const updateAccountPlanSeries = async (
   let targetIds: string[] = [];
   if (scope === 'current') targetIds = [currentTx.id!];
   else if (scope === 'forward') targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
+  else if (scope === 'backward') targetIds = series.filter(t => t.competenceMonth <= currentTx.competenceMonth).map(t => t.id!);
   else targetIds = series.map(t => t.id!);
 
   const safe = sanitizeForFirestore({ ...updatedFields, updatedAt: new Date().toISOString() } as any);
@@ -165,9 +170,10 @@ export const updateAccountPlanSeries = async (
   return Promise.all(targetIds.map(id => dbClient.updateTransaction(id, safe)));
 };
 
+// Fix: Update type of scope parameter to use RecurrenceScope and implement 'backward' logic
 export const deleteAccountPlanSeries = async (
   currentTx: Transaction,
-  scope: 'current' | 'forward' | 'all'
+  scope: RecurrenceScope
 ) => {
   const txs = await getEntries(currentTx.userId);
   const groupId = currentTx.recurrenceGroupId;
@@ -178,6 +184,7 @@ export const deleteAccountPlanSeries = async (
   let targetIds: string[] = [];
   if (scope === 'current') targetIds = [currentTx.id!];
   else if (scope === 'forward') targetIds = series.filter(t => t.competenceMonth >= currentTx.competenceMonth).map(t => t.id!);
+  else if (scope === 'backward') targetIds = series.filter(t => t.competenceMonth <= currentTx.competenceMonth).map(t => t.id!);
   else targetIds = series.map(t => t.id!);
 
   if ('bulkDeleteTransactions' in dbClient) {

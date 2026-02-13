@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App.tsx';
 import { 
@@ -6,9 +7,10 @@ import {
   updateAccountPlanSeries, 
   deleteAccountPlanSeries,
   getAccounts,
+  getCategories,
   RecurrenceScope 
 } from '../services/db.ts';
-import { Transaction, Account } from '../types.ts';
+import { Transaction, Account, Category } from '../types.ts';
 import { formatCurrency, getCurrentMonth, getMonthName, addMonthsToMonthKey } from '../utils/formatters.ts';
 import { parseNumericValue } from '../utils/number.ts';
 import { useToast } from '../context/ToastContext.tsx';
@@ -16,14 +18,13 @@ import {
   ChevronLeft, ChevronRight, Loader2, Plus, Repeat, Trash2, X, ArrowUpCircle, ArrowDownCircle, Calendar, LayoutGrid, List as ListIcon, Info
 } from 'lucide-react';
 
-const CATEGORY_DEFAULTS = ['Habitação', 'Alimentação', 'Transporte', 'Saúde', 'Higiene', 'Educação', 'Lazer', 'Assinaturas', 'Impostos/Taxas', 'Trabalho/Renda', 'Reserva', 'Dívidas', 'Outros'];
-
 const Provision: React.FC = () => {
   const { user } = useAuth();
   const { notifySuccess, notifyError, notifyInfo } = useToast();
   
   const [entries, setEntries] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [currentMonth, setCurrentMonth] = useState(getCurrentMonth());
@@ -41,7 +42,7 @@ const Provision: React.FC = () => {
     competenceMonth: getCurrentMonth(),
     recorrente: false,
     recurrenceMode: 'none',
-    categoryGroup: 'Habitação',
+    categoryId: '',
     valor: 0,
     descricao: ''
   });
@@ -53,12 +54,15 @@ const Provision: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [data, accs] = await Promise.all([
-        getEntries(user!.uid),
-        getAccounts(user!.uid)
+      const uid = user!.uid;
+      const [data, accs, cats] = await Promise.all([
+        getEntries(uid),
+        getAccounts(uid),
+        getCategories(uid)
       ]);
       setEntries(data);
       setAccounts(accs);
+      setCategories(cats);
     } catch (err) {
       notifyError("Erro ao carregar dados.");
     } finally {
@@ -88,6 +92,11 @@ const Provision: React.FC = () => {
       .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
   }, [entries, currentMonth, viewMode]);
 
+  const filteredCategories = useMemo(() => {
+    const dir = formData.tipo === 'receber' ? 'credit' : 'debit';
+    return categories.filter(c => c.direction === 'both' || c.direction === dir);
+  }, [categories, formData.tipo]);
+
   const handleOpenCreate = () => {
     setEditingItem(null);
     setFormData({
@@ -97,7 +106,7 @@ const Provision: React.FC = () => {
       vencimento: currentMonth + '-10',
       recorrente: false,
       recurrenceMode: 'none',
-      categoryGroup: 'Habitação',
+      categoryId: '',
       valor: 0,
       descricao: ''
     });
@@ -113,14 +122,12 @@ const Provision: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validações Básicas
     const valorNum = parseNumericValue(formData.valor);
     if (!formData.descricao?.trim()) { notifyInfo("A descrição é obrigatória."); return; }
     if (valorNum <= 0) { notifyInfo("O valor deve ser maior que zero."); return; }
     if (!formData.accountId) { notifyInfo("Selecione uma conta para o lançamento."); return; }
-    if (!formData.categoryGroup) { notifyInfo("Selecione uma categoria."); return; }
+    if (!formData.categoryId) { notifyInfo("Selecione uma categoria."); return; }
 
-    // Validações de Recorrência
     if (formData.recorrente) {
       if (!formData.recurrenceMode || formData.recurrenceMode === 'none') {
         notifyInfo("Selecione o modo da recorrência."); return;
@@ -133,7 +140,6 @@ const Provision: React.FC = () => {
       }
     }
 
-    // Se estiver editando um recorrente antigo, abre modal de escopo
     if (editingItem && (editingItem.recorrente || editingItem.isRecurring)) {
       setScopeTarget('update');
       setShowScopeModal(true);
@@ -142,8 +148,9 @@ const Provision: React.FC = () => {
 
     setIsSaving(true);
     try {
-      // Cria payload limpo (Sem undefined para não quebrar o Firestore)
       const isRec = !!formData.recorrente;
+      const selectedCat = categories.find(c => c.id === formData.categoryId);
+      
       const payload: any = {
         userId: user!.uid,
         tipo: formData.tipo || viewMode,
@@ -155,7 +162,8 @@ const Provision: React.FC = () => {
         vencimento: formData.vencimento,
         competenceMonth: formData.competenceMonth,
         accountId: formData.accountId,
-        categoryGroup: formData.categoryGroup,
+        categoryId: formData.categoryId,
+        categoryGroup: selectedCat?.name || 'Outros',
         recorrente: isRec,
         isRecurring: isRec,
         status: 'previsto',
@@ -195,6 +203,7 @@ const Provision: React.FC = () => {
     try {
       const valorNum = parseNumericValue(formData.valor);
       const isRec = !!formData.recorrente;
+      const selectedCat = categories.find(c => c.id === formData.categoryId);
       
       const payload: any = {
         descricao: formData.descricao?.trim(),
@@ -204,7 +213,8 @@ const Provision: React.FC = () => {
         vencimento: formData.vencimento,
         competenceMonth: formData.competenceMonth,
         accountId: formData.accountId,
-        categoryGroup: formData.categoryGroup,
+        categoryId: formData.categoryId,
+        categoryGroup: selectedCat?.name || 'Outros',
         updatedAt: new Date().toISOString()
       };
 
@@ -300,7 +310,7 @@ const Provision: React.FC = () => {
           <div 
             key={item.id} 
             onClick={() => handleEdit(item)}
-            className="bg-white p-5 rounded-[2rem] border-2 border-gray-50 flex items-center justify-between shadow-sm hover:border-blue-200 transition-all cursor-pointer group"
+            className="bg-white p-5 rounded-[2.5rem] border-2 border-gray-50 flex items-center justify-between shadow-sm hover:border-blue-200 transition-all cursor-pointer group"
           >
             <div className="flex items-center gap-4">
               <div className={`p-3 rounded-2xl ${viewMode === 'receber' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
@@ -312,7 +322,9 @@ const Provision: React.FC = () => {
                   {(item.recorrente || item.isRecurring) && <Repeat size={12} className="text-blue-400"/>}
                 </h4>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{item.categoryGroup}</span>
+                  <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">
+                    {categories.find(c => c.id === item.categoryId)?.name || item.categoryGroup || 'Outros'}
+                  </span>
                   <span className="w-1 h-1 bg-gray-200 rounded-full"></span>
                   <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest">{accounts.find(a => a.id === item.accountId)?.name || 'S/ Conta'}</span>
                 </div>
@@ -377,9 +389,10 @@ const Provision: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Grupo / Categoria</label>
-                  <select required value={formData.categoryGroup} onChange={e => setFormData({...formData, categoryGroup: e.target.value})} className="w-full font-black border-b-2 border-blue-50 pb-2 bg-transparent text-sm">
-                    {CATEGORY_DEFAULTS.map(c => <option key={c} value={c}>{c}</option>)}
+                  <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">Categoria</label>
+                  <select required value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})} className="w-full font-black border-b-2 border-blue-50 pb-2 bg-transparent text-sm">
+                    <option value="">Selecione...</option>
+                    {filteredCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -400,11 +413,11 @@ const Provision: React.FC = () => {
                 {formData.recorrente && (
                   <div className="space-y-4 pt-4 border-t border-gray-200 animate-in slide-in-from-top-2">
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => setFormData({...formData, recurrenceMode: 'until'})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === 'until' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Até o Mês</button>
-                      <button type="button" onClick={() => setFormData({...formData, recurrenceMode: 'count'})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === 'count' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Por X Vezes</button>
+                      <button type="button" onClick={() => setFormData({...formData, recurrenceMode: "until"})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === "until" ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Até o Mês</button>
+                      <button type="button" onClick={() => setFormData({...formData, recurrenceMode: "count"})} className={`flex-1 py-2 text-[8px] font-black uppercase rounded-lg border-2 ${formData.recurrenceMode === "count" ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}>Por X Vezes</button>
                     </div>
-                    {formData.recurrenceMode === 'until' && <input type="month" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" value={formData.recurrenceEndMonth || ''} onChange={e => setFormData({...formData, recurrenceEndMonth: e.target.value})}/>}
-                    {formData.recurrenceMode === 'count' && <input type="number" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" placeholder="Qtd. de meses" value={formData.recurrenceCount || ''} onChange={e => setFormData({...formData, recurrenceCount: parseInt(e.target.value)})}/>}
+                    {formData.recurrenceMode === "until" && <input type="month" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" value={formData.recurrenceEndMonth || ''} onChange={e => setFormData({...formData, recurrenceEndMonth: e.target.value})}/>}
+                    {formData.recurrenceMode === "count" && <input type="number" className="w-full p-3 bg-white border-2 border-gray-100 rounded-xl font-black text-xs" placeholder="Qtd. de meses" value={formData.recurrenceCount || ''} onChange={e => setFormData({...formData, recurrenceCount: parseInt(e.target.value)})}/>}
                   </div>
                 )}
               </div>

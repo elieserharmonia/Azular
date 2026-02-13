@@ -18,10 +18,25 @@ export const CATEGORY_GROUPS = [
 ];
 
 export const DEFAULT_CATEGORIES = [
-  { name: 'Aluguel', direction: 'debit', group: 'Habitação' },
-  { name: 'Supermercado', direction: 'debit', group: 'Alimentação' },
-  { name: 'Salário', direction: 'credit', group: 'Trabalho/Renda' },
-  { name: 'Internet', direction: 'debit', group: 'Assinaturas' },
+  { name: 'Alimentação', direction: 'debit' },
+  { name: 'Assinaturas (Netflix, Google)', direction: 'debit' },
+  { name: 'Aulas', direction: 'debit' },
+  { name: 'Coleta (Doação)', direction: 'debit' },
+  { name: 'Comissões', direction: 'credit' },
+  { name: 'Cursos', direction: 'debit' },
+  { name: 'Educação', direction: 'debit' },
+  { name: 'Higiene', direction: 'debit' },
+  { name: 'Impostos', direction: 'debit' },
+  { name: 'Lanche (Pizza, Sorvete)', direction: 'debit' },
+  { name: 'Lazer', direction: 'debit' },
+  { name: 'Moradia', direction: 'debit' },
+  { name: 'Refeição', direction: 'debit' },
+  { name: 'Reserva', direction: 'debit' },
+  { name: 'Salário', direction: 'credit' },
+  { name: 'Saúde', direction: 'debit' },
+  { name: 'Serviços (Água, Luz, Internet)', direction: 'debit' },
+  { name: 'Transporte', direction: 'debit' },
+  { name: 'Outros', direction: 'both' },
 ];
 
 export const COLORS = {
