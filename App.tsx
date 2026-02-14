@@ -8,12 +8,13 @@ import { getAuthClient } from './services/authClient.ts';
 import { saveUserProfile } from './services/db.ts';
 import { firebaseEnabled } from './lib/firebase.ts';
 import { getAuthModule } from './lib/firebaseModules.ts';
+import RouteErrorBoundary from './components/RouteErrorBoundary.tsx';
 
 // Loader de tela cheia para transições de rota
-const FullScreenLoader = () => (
-  <div className="flex flex-col items-center justify-center min-h-screen bg-[#F4F7FE] animate-pulse">
+const FullScreenLoader = ({ message = "Azulando..." }: { message?: string }) => (
+  <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in">
     <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-    <span className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Azulando...</span>
+    <span className="text-[10px] font-black uppercase text-blue-400 tracking-widest">{message}</span>
   </div>
 );
 
@@ -28,6 +29,9 @@ const Signup = lazy(() => import('./pages/Signup.tsx'));
 const Analysis = lazy(() => import('./pages/Analysis.tsx'));
 const Categories = lazy(() => import('./pages/Categories.tsx'));
 const Goals = lazy(() => import('./pages/Goals.tsx'));
+const AccountsPay = lazy(() => import('./pages/AccountsPay.tsx'));
+const AccountsReceive = lazy(() => import('./pages/AccountsReceive.tsx'));
+const Transactions = lazy(() => import('./pages/Transactions.tsx'));
 
 interface AuthContextType {
   user: any;
@@ -46,7 +50,7 @@ export const useAuth = () => {
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isPreview: isPre } = useAuth();
-  if (loading) return null;
+  if (loading) return <FullScreenLoader message="Validando acesso..." />;
   if (!user && !isPre) return <Navigate to="/login" />;
   return <>{children}</>;
 };
@@ -106,26 +110,105 @@ const App = () => {
 
   return (
     <AuthContext.Provider value={value}>
-      <Suspense fallback={<FullScreenLoader />}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          
-          <Route path="/app" element={<ProtectedRoute><Layout><Outlet /></Layout></ProtectedRoute>}>
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="contas-plano" element={<Provision />} />
-            <Route path="contas" element={<AccountsManager />} />
-            <Route path="restart-plan" element={<RestartPlan />} />
-            <Route path="analysis" element={<Analysis />} />
-            <Route path="categories" element={<Categories />} />
-            <Route path="goals" element={<Goals />} />
-            <Route path="profile" element={<Profile />} />
-            <Route index element={<Navigate to="/app/dashboard" />} />
-          </Route>
+      <Routes>
+        <Route path="/login" element={
+          <Suspense fallback={<FullScreenLoader message="Carregando Login..." />}>
+            <RouteErrorBoundary routeName="Login">
+              <Login />
+            </RouteErrorBoundary>
+          </Suspense>
+        } />
+        <Route path="/signup" element={
+          <Suspense fallback={<FullScreenLoader message="Carregando Cadastro..." />}>
+            <RouteErrorBoundary routeName="Cadastro">
+              <Signup />
+            </RouteErrorBoundary>
+          </Suspense>
+        } />
+        
+        <Route path="/app" element={<ProtectedRoute><Layout><Outlet /></Layout></ProtectedRoute>}>
+          <Route path="dashboard" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Início">
+                <Dashboard />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="contas-plano" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Receber & Pagar">
+                <Provision />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="contas" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Lançamentos">
+                <Transactions />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="pagar" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Contas a Pagar">
+                <AccountsPay />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="receber" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Contas a Receber">
+                <AccountsReceive />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="manager" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Gestão de Contas">
+                <AccountsManager />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="restart-plan" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Recomeço">
+                <RestartPlan />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="analysis" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Análise">
+                <Analysis />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="categories" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Categorias">
+                <Categories />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="goals" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Sonhos">
+                <Goals />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route path="profile" element={
+            <Suspense fallback={<FullScreenLoader />}>
+              <RouteErrorBoundary routeName="Perfil">
+                <Profile />
+              </RouteErrorBoundary>
+            </Suspense>
+          } />
+          <Route index element={<Navigate to="/app/dashboard" />} />
+        </Route>
 
-          <Route path="/" element={<Navigate to="/app/dashboard" />} />
-        </Routes>
-      </Suspense>
+        <Route path="/" element={<Navigate to="/app/dashboard" />} />
+      </Routes>
     </AuthContext.Provider>
   );
 };

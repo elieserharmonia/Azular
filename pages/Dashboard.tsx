@@ -4,7 +4,8 @@ import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
 import { getEntries } from '../services/db';
 import { Transaction } from '../types';
-import { formatCurrency, getTodayDate } from '../utils/formatters';
+// Import formatDate which was missing and causing a reference error
+import { formatCurrency, formatDate, getTodayDate } from '../utils/formatters';
 import { 
   Plus, 
   ArrowUpCircle, 
@@ -60,7 +61,12 @@ const Dashboard: React.FC = () => {
     }
   }, [entries]);
 
-  if (loading) return null;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[40vh] animate-pulse">
+      <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+      <span className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Azulando...</span>
+    </div>
+  );
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-500">
@@ -88,48 +94,30 @@ const Dashboard: React.FC = () => {
       {/* Quick Actions */}
       <section className="grid grid-cols-2 gap-4">
         <button 
-          onClick={() => navigate('/app/contas/novo?tipo=pagar')}
+          onClick={() => navigate('/app/pagar')}
           className="bg-white p-6 rounded-[2rem] border-2 border-red-50 flex flex-col items-center gap-3 active:scale-95 transition-all shadow-sm group"
         >
           <div className="p-3 bg-red-50 text-red-500 rounded-2xl group-hover:bg-red-500 group-hover:text-white transition-colors">
             <ArrowDownCircle size={24} />
           </div>
-          <span className="text-[10px] font-black uppercase text-gray-400">Conta a Pagar</span>
+          <span className="text-[10px] font-black uppercase text-gray-400">Contas a Pagar</span>
         </button>
         <button 
-          onClick={() => navigate('/app/contas/novo?tipo=receber')}
+          onClick={() => navigate('/app/receber')}
           className="bg-white p-6 rounded-[2rem] border-2 border-emerald-50 flex flex-col items-center gap-3 active:scale-95 transition-all shadow-sm group"
         >
           <div className="p-3 bg-emerald-50 text-emerald-500 rounded-2xl group-hover:bg-emerald-500 group-hover:text-white transition-colors">
             <ArrowUpCircle size={24} />
           </div>
-          <span className="text-[10px] font-black uppercase text-gray-400">Conta a Receber</span>
+          <span className="text-[10px] font-black uppercase text-gray-400">Contas a Receber</span>
         </button>
-      </section>
-
-      {/* Filters/Status shortcuts */}
-      <section className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-        {[
-          { label: 'Hoje', icon: <Calendar size={14}/>, color: 'blue' },
-          { label: 'Atrasadas', icon: <AlertCircle size={14}/>, color: 'red', count: stats.atrasadas },
-          { label: '7 Dias', icon: <Calendar size={14}/>, color: 'indigo' },
-          { label: 'Pagas', icon: <CheckCircle2 size={14}/>, color: 'emerald' },
-        ].map((btn, i) => (
-          <button key={i} className={`flex items-center gap-2 px-6 py-3 bg-white border-2 border-gray-50 rounded-2xl whitespace-nowrap shadow-sm`}>
-            <span className={`text-${btn.color}-500`}>{btn.icon}</span>
-            <span className="text-[10px] font-black uppercase text-gray-600">{btn.label}</span>
-            {btn.count !== undefined && btn.count > 0 && (
-              <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">{btn.count}</span>
-            )}
-          </button>
-        ))}
       </section>
 
       {/* Recent Activity */}
       <section className="space-y-4">
         <div className="flex items-center justify-between px-2">
-          <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Contas Próximas</h4>
-          <button onClick={() => navigate('/app/contas')} className="text-[10px] font-black uppercase text-blue-600 flex items-center gap-1">Ver tudo <ChevronRight size={12}/></button>
+          <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Compromissos Próximos</h4>
+          <button onClick={() => navigate('/app/pagar')} className="text-[10px] font-black uppercase text-blue-600 flex items-center gap-1">Ver tudo <ChevronRight size={12}/></button>
         </div>
         
         <div className="space-y-3">
@@ -141,7 +129,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-sm font-black text-gray-800 uppercase leading-none">{entry.descricao}</p>
-                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mt-1">{entry.vencimento}</p>
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mt-1">{formatDate(entry.vencimento)}</p>
                 </div>
               </div>
               <div className="text-right">
