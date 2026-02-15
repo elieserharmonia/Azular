@@ -1,17 +1,15 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { getEntries, deleteEntry, updateAccountEntry } from '../services/db';
 import { Transaction } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { 
-  ArrowDownCircle, 
-  Search, 
-  Trash2, 
-  CheckCircle2, 
+import {
+  ArrowDownCircle,
+  Search,
+  Trash2,
+  CheckCircle2,
   Calendar,
   AlertCircle,
-  ChevronRight,
   Filter
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -28,7 +26,7 @@ const AccountsPay: React.FC = () => {
     setLoading(true);
     try {
       const data = await getEntries(user.uid);
-      setEntries(data.filter(e => e.tipo === 'pagar' || e.type === 'debit'));
+      setEntries(data.filter((e: any) => e.tipo === 'pagar' || e.type === 'debit'));
     } catch (err) {
       notifyError("Erro ao carregar contas a pagar.");
     } finally {
@@ -38,7 +36,7 @@ const AccountsPay: React.FC = () => {
 
   useEffect(() => { load(); }, [user]);
 
-  const handleMarkAsDone = async (entry: Transaction) => {
+  const handleMarkAsDone = async (entry: any) => {
     try {
       await updateAccountEntry(entry.id!, { status: 'pago' });
       notifySuccess("Conta paga com sucesso!");
@@ -60,9 +58,10 @@ const AccountsPay: React.FC = () => {
   };
 
   const filtered = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
     return entries
-      .filter(e => e.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
-      .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+      .filter((e: any) => (e.descricao || e.description || '').toLowerCase().includes(term))
+      .sort((a: any, b: any) => String(a.vencimento || '').localeCompare(String(b.vencimento || '')));
   }, [entries, searchTerm]);
 
   if (loading) return (
@@ -85,9 +84,9 @@ const AccountsPay: React.FC = () => {
       </header>
 
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18}/>
-        <input 
-          type="text" 
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+        <input
+          type="text"
           placeholder="Pesquisar contas..."
           className="w-full bg-white border-2 border-gray-50 p-4 pl-12 rounded-2xl font-bold outline-none focus:border-blue-600 shadow-sm"
           value={searchTerm}
@@ -96,49 +95,56 @@ const AccountsPay: React.FC = () => {
       </div>
 
       <div className="space-y-4">
-        {filtered.map(entry => (
-          <div key={entry.id} className="bg-white p-5 rounded-[2.5rem] border-2 border-gray-50 shadow-sm flex items-center justify-between group">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-2xl ${entry.status === 'pago' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
-                {entry.status === 'pago' ? <CheckCircle2 size={24}/> : <Calendar size={24}/>}
+        {filtered.map((entry: any) => {
+          const desc = entry.descricao || entry.description || '-';
+          const venc = entry.vencimento || '';
+          const valor = Number.isFinite(Number(entry.valor)) ? Number(entry.valor) : 0;
+
+          return (
+            <div key={entry.id} className="bg-white p-5 rounded-[2.5rem] border-2 border-gray-50 shadow-sm flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-2xl ${entry.status === 'pago' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
+                  {entry.status === 'pago' ? <CheckCircle2 size={24} /> : <Calendar size={24} />}
+                </div>
+                <div>
+                  <p className="text-sm font-black text-gray-800 uppercase leading-none">{desc}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{venc ? formatDate(venc) : '-'}</span>
+                    {entry.status !== 'pago' && venc && venc < new Date().toISOString().split('T')[0] && (
+                      <span className="flex items-center gap-1 text-[8px] font-black text-red-500 uppercase">
+                        <AlertCircle size={10} /> Atrasada
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-black text-gray-800 uppercase leading-none">{entry.descricao}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{formatDate(entry.vencimento)}</span>
-                  {entry.status !== 'pago' && entry.vencimento < new Date().toISOString().split('T')[0] && (
-                    <span className="flex items-center gap-1 text-[8px] font-black text-red-500 uppercase">
-                      <AlertCircle size={10} /> Atrasada
-                    </span>
+
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-lg font-black tracking-tighter text-red-500">{formatCurrency(valor)}</p>
+                </div>
+                <div className="flex gap-1">
+                  {entry.status !== 'pago' && (
+                    <button
+                      onClick={() => handleMarkAsDone(entry)}
+                      className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg active:scale-90 transition-all"
+                      title="Marcar como Pago"
+                    >
+                      <CheckCircle2 size={18} />
+                    </button>
                   )}
+                  <button
+                    onClick={() => handleDelete(entry.id!)}
+                    className="p-3 text-gray-300 hover:text-red-500 transition-colors"
+                    title="Excluir"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-lg font-black tracking-tighter text-red-500">{formatCurrency(entry.valor)}</p>
-              </div>
-              <div className="flex gap-1">
-                {entry.status !== 'pago' && (
-                  <button 
-                    onClick={() => handleMarkAsDone(entry)}
-                    className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg active:scale-90 transition-all"
-                    title="Marcar como Pago"
-                  >
-                    <CheckCircle2 size={18}/>
-                  </button>
-                )}
-                <button 
-                  onClick={() => handleDelete(entry.id!)}
-                  className="p-3 text-gray-300 hover:text-red-500 transition-colors"
-                >
-                  <Trash2 size={18}/>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {filtered.length === 0 && (
           <div className="py-20 text-center flex flex-col items-center gap-4 opacity-30">
